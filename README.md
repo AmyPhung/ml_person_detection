@@ -9,6 +9,13 @@
 6. `pip install tensorflow`
 
 
+### Dependencies:
+https://github.com/eric-wieser/ros_numpy
+`pip install --user .`
+
+### Usage
+`roslaunch ml_person_detection bringup.launch`
+Note: make sure FILENAME in waymo2ros.py is set properly
 
 ### Troubleshooting
 ##### Tensorflow not installing properly
