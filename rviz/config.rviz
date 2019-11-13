@@ -6,6 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 768
   - Class: rviz/Selection
@@ -80,6 +81,14 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: visualization_marker_array
+      Name: MarkerArray
+      Namespaces:
+        waymo2ros: true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -104,21 +113,26 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: 0.0149999438
-      Class: rviz/TopDownOrtho
+      Class: rviz/Orbit
+      Distance: 22.3046513
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
+      Focal Point:
+        X: 3.17893648
+        Y: 5.17285824
+        Z: -1.3059777
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.0500000007
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Scale: 33.1641655
+      Pitch: 0.329797089
       Target Frame: <Fixed Frame>
-      Value: TopDownOrtho (rviz)
-      X: 0.446623713
-      Y: -0.0527444258
+      Value: Orbit (rviz)
+      Yaw: 4.53999996
     Saved: ~
 Window Geometry:
   Displays:

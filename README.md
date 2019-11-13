@@ -10,8 +10,14 @@
 
 
 ### Dependencies:
+Package for converting from numpy to PointCloud2
 https://github.com/eric-wieser/ros_numpy
 `pip install --user .`
+
+Package for drawing bounding boxes in RVIZ
+https://github.com/jsk-ros-pkg/jsk_visualization.git
+7. `cd your_catkin_ws/`
+8. `catkin_make`
 
 ### Usage
 `roslaunch ml_person_detection bringup.launch`
