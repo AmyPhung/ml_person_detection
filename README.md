@@ -2,7 +2,7 @@
 
 ### Setup
 1. `cd your_catkin_ws/src`
-2. `git clone https://github.com/waymo-research/waymo-open-dataset.git waymo-od`
+2. `git clone https://github.com/waymo-research/waymo-open-dataset.git`
 3. `cd waymo-od && git branch -a`
 4. `git checkout remotes/origin/r1.0`
 5. `pip install waymo-open-dataset`
