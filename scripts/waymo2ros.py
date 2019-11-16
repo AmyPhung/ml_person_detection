@@ -29,7 +29,7 @@ class Waymo2ROS:
     def __init__(self, frame_id="base_link"):
         """Initialize node, publishers, state vars."""
         self.frame_id = frame_id
-        self.label_ids = {}  # stores label - int correspondence 
+        self.label_ids = {}  # stores label - int correspondence
 
         rp.init_node("waymo2ros")
         self.pcl_pub = rp.Publisher(
@@ -103,7 +103,7 @@ class Waymo2ROS:
             m.id = self.get_label_id(name)
             m.type = m.CUBE
 
-            m.action = m.MODIFY if name in self.label_ids.keys() else m.ADD 
+            m.action = m.MODIFY if name in self.label_ids.keys() else m.ADD
             m.pose.position.x = label.box.center_x
             m.pose.position.y = label.box.center_y
             m.pose.position.z = label.box.center_z
@@ -128,7 +128,7 @@ if __name__ == "__main__":
     conversion = Waymo2ROS()
 
     # TODO: Make this more general
-    FILENAME = '/home/cnovak/Workspaces/catkin_ws/src/waymo-od/tutorial/frames'
+    FILENAME = '/home/amy/test_ws/src/waymo-od/tutorial/frames'
     dataset = tf.data.TFRecordDataset(FILENAME, compression_type='')
     for data in dataset:
         frame = open_dataset.Frame()
@@ -169,11 +169,11 @@ if __name__ == "__main__":
 
 
     print(frame.context)
-    
+
     plt.figure(figsize=(64, 20))
     def plot_range_image_helper(data, name, layout, vmin = 0, vmax=1, cmap='gray'):
       ""\"Plots range image.
-    
+
       Args:
         data: range image data
         name: the image title
@@ -188,14 +188,14 @@ if __name__ == "__main__":
       plt.grid(False)
       plt.axis('off')
       # plt.show()
-    
+
     def get_range_image(laser_name, return_index):
       ""\"Returns range image given a laser name and its return index.""\"
       return range_images[laser_name][return_index]
-    
+
     def show_range_image(range_image, layout_index_start = 1):
       ""\"Shows range image.
-    
+
       Args:
         range_image: the range image data from a given lidar of type MatrixFloat.
         layout_index_start: layout offset
@@ -214,19 +214,19 @@ if __name__ == "__main__":
                        [8, 1, layout_index_start + 1], vmax=1.5, cmap='gray')
       plot_range_image_helper(range_image_elongation.numpy(), 'elongation',
                        [8, 1, layout_index_start + 2], vmax=1.5, cmap='gray')
-    
-    
+
+
     frame.lasers.sort(key=lambda laser: laser.name)
     show_range_image(get_range_image(open_dataset.LaserName.TOP, 0), 1)
     show_range_image(get_range_image(open_dataset.LaserName.TOP, 1), 4)
-    
+
     #
     points, cp_points = frame_utils.convert_range_image_to_point_cloud(
         frame,
         range_images,
         camera_projections,
         range_image_top_pose)
-    
+
     points_all = np.concatenate(points, axis=0)
     print(points_all)
     """

@@ -4,6 +4,8 @@ from sensor_msgs.msg import PointCloud2
 import ros_numpy
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.cluster.hierarchy as hcluster
+
 
 class PclFeatureDetection:
     def __init__(self):
@@ -24,10 +26,18 @@ class PclFeatureDetection:
         # Convert from list of tuples to list of lists
         data_np = np.array([list(pt) for pt in data])
         # Remove points below a certain threshold in z
+        # TODO: Use histogram to find ground_thresh (https://hcis-journal.springeropen.com/articles/10.1186/s13673-017-0120-7)
         data_th = data_np[data_np[:,2] > ground_thresh]
+        # Downsample points
+        ds_factor = 30 # factor to downsample points by TODO: remove hardcode
+        data_ds = data_th[::ds_factor]
+        # Cluster points in 2D - uses hierarchical clustering (https://stackoverflow.com/questions/10136470/unsupervised-clustering-with-unknown-number-of-clusters)
+        thresh = 1
+        clusters = hcluster.fclusterdata(data_ds[:,:2], thresh, criterion="distance")
+        num_clusters = len(np.unique(clusters))
 
-        # Visualize points
-        plt.plot(data_th[:,0], data_th[:,1], '*')  # data_th[:,:2]
+        plt.clf()
+        plt.scatter(*np.transpose(data_ds[:,:2]), c=clusters)
         plt.axis("equal")
         plt.draw()
         plt.pause(0.00000000001)
@@ -37,8 +47,9 @@ class PclFeatureDetection:
         plt.show()
 
         while not rospy.is_shutdown():
-            if self._pcl_msg != None:
+            if self._pcl_msg != None: # Only compute for unique messages
                 self.computeClusters()
+                self._pcl_msg = None
             self.update_rate.sleep()
 
 
