@@ -103,7 +103,7 @@ class Waymo2ROS:
 
     def frame2points(self, frame):
         """Extract points from waymo frame."""
-        frame.ParseFromString(bytearray(data.numpy()))
+        #frame.ParseFromString(bytearray(data.numpy()))
         frame.lasers.sort(key=lambda laser: laser.name)
 
         (range_images, camera_projections, range_image_top_pose) = \
