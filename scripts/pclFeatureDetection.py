@@ -5,6 +5,12 @@ import ros_numpy
 import matplotlib.pyplot as plt
 import numpy as np
 
+GROUND_THRESHOLD = 1  # meters
+
+def remove_groundplane(data):
+    """Remove points below z-threshold."""
+    return data[data[:,2] > GROUND_THRESHOLD]
+
 class PclFeatureDetection:
     def __init__(self):
         rospy.init_node("pcl_feature_detection")
@@ -16,15 +22,15 @@ class PclFeatureDetection:
     def pclCB(self, msg):
         self._pcl_msg = msg
 
+
     def computeClusters(self):
-        ground_thresh = 1 # In meters
 
         # Convert to numpy array - each point is a tuple
         data = ros_numpy.numpify(self._pcl_msg)
         # Convert from list of tuples to list of lists
         data_np = np.array([list(pt) for pt in data])
         # Remove points below a certain threshold in z
-        data_th = data_np[data_np[:,2] > ground_thresh]
+        data_th = remove_groundplane(data_np)
 
         # Visualize points
         plt.plot(data_th[:,0], data_th[:,1], '*')  # data_th[:,:2]

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!usr/bin/env python
 import rospy
 import ros_numpy
 import time
@@ -12,7 +12,9 @@ from collections import namedtuple
 from sensor_msgs.msg import PointCloud2
 from tf.transformations import euler_from_quaternion
 from waymo_open_dataset import dataset_pb2 as open_dataset
+
 from waymo2ros import Waymo2ROS
+from pclFeatureDetection import remove_groundplane
 
 tf.logging.set_verbosity(tf.logging.ERROR)
 
@@ -25,13 +27,13 @@ class DatasetParser:
     def compute_clusters(self, pcl, bboxes):
 
         obj_pcls = {}  # Hash map of bbox label : pcl
-
-        # Convert to numpy array - each point is a tuple
         data = ros_numpy.numpify(pcl)
+        data = remove_groundplane(np.array([list(pt) for pt in data]))
+
         # Convert from list of tuples to list of XYPairs
         data_pts = [XYPair(pt[0], pt[1]) for pt in data]
-
         print("Found %i markers" % len(bboxes.markers))
+
         for m in bboxes.markers:
             # Sub-select points into new PointCloud2 if within marker rect
             print("Parsing marker %i" % m.id)
