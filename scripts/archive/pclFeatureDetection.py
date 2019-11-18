@@ -29,6 +29,7 @@ class PclFeatureDetection:
         # TODO: Use histogram to find ground_thresh (https://hcis-journal.springeropen.com/articles/10.1186/s13673-017-0120-7)
         data_th = data_np[data_np[:,2] > ground_thresh]
         # Downsample points
+        print("here")
         ds_factor = 30 # factor to downsample points by TODO: remove hardcode
         data_ds = data_th[::ds_factor]
         # Cluster points in 2D - uses hierarchical clustering (https://stackoverflow.com/questions/10136470/unsupervised-clustering-with-unknown-number-of-clusters)
