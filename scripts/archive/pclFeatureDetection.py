@@ -7,6 +7,12 @@ import numpy as np
 import scipy.cluster.hierarchy as hcluster
 
 
+GROUND_THRESHOLD = 1  # meters
+
+def remove_groundplane(data):
+    """Remove points below z-threshold."""
+    return data[data[:,2] > GROUND_THRESHOLD]
+
 class PclFeatureDetection:
     def __init__(self):
         rospy.init_node("pcl_feature_detection")
@@ -18,8 +24,8 @@ class PclFeatureDetection:
     def pclCB(self, msg):
         self._pcl_msg = msg
 
+
     def computeClusters(self):
-        ground_thresh = 1 # In meters
 
         # Convert to numpy array - each point is a tuple
         data = ros_numpy.numpify(self._pcl_msg)

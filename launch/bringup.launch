@@ -1,7 +1,8 @@
 <launch>
 
   <!-- Show in Rviz   -->
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find ml_person_detection)/rviz/config.rviz"/>
+  <node name="rviz" pkg="rviz" type="rviz" 
+    args="-d $(find ml_person_detection)/rviz/config.rviz"/>
   <node name="waymo2ros" pkg="ml_person_detection"
     type="waymo2ros.py" output="screen"/>
   <node name="pcl_feature_detection" pkg="ml_person_detection"
