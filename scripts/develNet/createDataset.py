@@ -1,9 +1,11 @@
-class CreateDataset:
+#!usr/bin/env python
+import rospy
+
+class CreateDataset(object):
     def __init__(self):
+        """Provide directory location to find frames."""
         pass
-        """
-        provide directory location to find frames
-        """
+
     def loadFrame(self):
         pass
 
@@ -20,9 +22,7 @@ class CreateDataset:
         pass
 
     def parseFrame(self):
-        """
-        will overwrite with ROS in other object
-        """
+        """Main function."""
         # load frame
         # filter frame
         # cluster
@@ -37,11 +37,12 @@ class CreateDataset:
 
 
 
-class CreateDatasetROS(CreateDataset):
+class DatasetCreatorVis(DatasetCreator):
 
     def __init__(self):
+
         # Do ros stuff here
-        super.__init__()
+        super(DatasetCreator, self).__init__()
         pass
 
     def parseFrame(self):
@@ -55,3 +56,11 @@ class CreateDatasetROS(CreateDataset):
         # compute
         # save
         pass
+
+if __name__ == "__main__":
+    visualize = False
+    creator = DatasetCreatorVis() if visualize else DatasetCreator()
+    directory = '/home/cnovak/Data/wayno-od'
+    file = ' segment-15445436653637630344_3957_561_3977_561' \
+        + '_with_camera_labels.tfrecord'
+    creator.run(directory)
