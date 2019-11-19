@@ -14,8 +14,88 @@ from modules.waymo2ros import Waymo2Numpy
 XYPair = namedtuple('XYPair', 'x y')
 XYZPair = namedtuple('XYZPair', 'x y z')
 
+
+def is_between_lines(l1, l2, p):
+    """Return true if point is between parallel lines.
+
+    Args:
+        l1: function that returns y for any x
+        l2: function that returns y for any x
+        p: some obj with x and y attr
+
+    Returns:
+        bool if point between parallel lines.
+
+    """
+    if not abs(round(l1(-2) - l1(2), 3)) \
+            == abs(round(l2(-2) - l2(2), 3)):
+        raise ValueError('lines are not parallel!')
+
+    y0, y1, y2 = p.y, l1(p.x), l2(p.x)
+    # If line 1 is above line 2
+    if y1 > y2:
+        return True if y2 < y0 < y1 else False
+    else:
+        return True if y1 < y0 < y2 else False
+
+
+def is_in_bbox(point, label):
+    """Return True if point within bbox in xy-plane.
+
+    Args:
+        point: obj representing point to check, has x & y attr
+        bbox: laser scan thing from waymo?
+
+    Returns:
+        bool True if point in box else False
+    """
+    
+    # Simplify variables for some marker attributes
+    angle = label.box.heading
+    cntr = XYZPair(
+        label.box.center_x, label.box.center_y, label.box.center_z)
+
+    # Calculate offsets in xy-coordinates for each side
+    l = XYPair(
+        0.5 * label.box.length * np.cos(np.radians(angle)),
+        0.5 * label.box.length * np.sin(np.radians(angle)))
+    w = XYPair(
+        0.5 * label.box.width * np.cos(np.radians(90 + angle)),
+        0.5 * label.box.width * np.sin(np.radians(90 + angle)))
+
+    # Calculate corner points
+    p1 = XYPair(cntr.x + l.x + w.x, cntr.y + l.y + w.y)
+    p2 = XYPair(cntr.x - l.x - w.x, cntr.y - l.y - w.y)
+    p3 = XYPair(cntr.x + l.x - w.x, cntr.y + l.y - w.y)
+    p4 = XYPair(cntr.x - l.x + w.x, cntr.y - l.y + w.y)
+
+    # Create functions for lines representing bbox sides
+    def w1(x):
+        return ((p4.y - p2.y) / (p4.x - p2.x)) * (x - p4.x) + p4.y
+
+    def w2(x):
+        return ((p3.y - p1.y) / (p3.x - p1.x)) * (x - p3.x) + p3.y
+
+    def l1(x):
+        return ((p2.y - p3.y) / (p2.x - p3.x)) * (x - p2.x) + p2.y
+
+    def l2(x):
+        return ((p1.y - p4.y) / (p1.x - p4.x)) * (x - p1.x) + p1.y
+
+    # Check that point is between both sets of parallel lines
+    return True if is_between_lines(w1, w2, point) \
+        and is_between_lines(l1, l2, point) else False
+
+
 class DatasetCreator(object):
-    """TODO ADD DOCSTRING"""
+    """Class for creating labeled cluster metadata from raw waymo data.
+
+    Use this class to iterate through .tfrecord files, pull out frames,
+    extract clusters from the frames using provided bounding boxes,
+    calculate features of clusters, and save resulting features and
+    metadata to create a cleaned dataset.
+
+    """
 
     def __init__(self):
         """Provide directory location to find frames."""
@@ -48,7 +128,7 @@ class DatasetCreator(object):
             # Sub-select points into new PointCloud2 if within marker rect
             print("Parsing bounding box %s" % bbox.id)
             t = time.time()
-            obj_pcls[bbox.id] = [pt for pt in pcl if self.is_in_bbox(pt, bbox)]
+            obj_pcls[bbox.id] = [pt for pt in pcl if is_in_bbox(pt, bbox)]
             print("Took %.2f sec" % (time.time() - t))
 
         return obj_pcls
@@ -92,82 +172,14 @@ class DatasetCreator(object):
             self.parseFrame(frame)
         return
 
-    def is_in_bbox(self, point, label):
-        """Return True if point within bbox in xy-plane.
-
-        Args:
-            point: obj representing point to check, has x & y attr
-            bbox: laser scan thing from waymo?
-
-        Returns:
-            bool True if point in box else False
-        """
-        
-        # Simplify variables for some marker attributes
-        angle = label.box.heading
-        cntr = XYZPair(
-            label.box.center_x, label.box.center_y, label.box.center_z)
-
-        # Calculate offsets in xy-coordinates for each side
-        l = XYPair(
-            0.5 * label.box.length * np.cos(np.radians(angle)),
-            0.5 * label.box.length * np.sin(np.radians(angle)))
-        w = XYPair(
-            0.5 * label.box.width * np.cos(np.radians(90 + angle)),
-            0.5 * label.box.width * np.sin(np.radians(90 + angle)))
-
-        # Calculate corner points
-        p1 = XYPair(cntr.x + l.x + w.x, cntr.y + l.y + w.y)
-        p2 = XYPair(cntr.x - l.x - w.x, cntr.y - l.y - w.y)
-        p3 = XYPair(cntr.x + l.x - w.x, cntr.y + l.y - w.y)
-        p4 = XYPair(cntr.x - l.x + w.x, cntr.y - l.y + w.y)
-
-        # Create functions for lines representing bbox sides
-        def w1(x):
-            return ((p4.y - p2.y) / (p4.x - p2.x)) * (x - p4.x) + p4.y
-
-        def w2(x):
-            return ((p3.y - p1.y) / (p3.x - p1.x)) * (x - p3.x) + p3.y
-
-        def l1(x):
-            return ((p2.y - p3.y) / (p2.x - p3.x)) * (x - p2.x) + p2.y
-
-        def l2(x):
-            return ((p1.y - p4.y) / (p1.x - p4.x)) * (x - p1.x) + p1.y
-
-        # Check that point is between both sets of parallel lines
-        return True if self.is_between_lines(w1, w2, point) \
-            and self.is_between_lines(l1, l2, point) else False
-
-    def is_between_lines(self, l1, l2, p):
-        """Return true if point is between parallel lines.
-
-        Args:
-            l1: function that returns y for any x
-            l2: function that returns y for any x
-            p: some obj with x and y attr
-
-        Returns:
-            bool if point between parallel lines.
-
-        """
-        if not abs(round(l1(-2) - l1(2), 3)) \
-                == abs(round(l2(-2) - l2(2), 3)):
-            raise ValueError('lines are not parallel!')
-
-        y0, y1, y2 = p.y, l1(p.x), l2(p.x)
-        # If line 1 is above line 2
-        if y1 > y2:
-            return True if y2 < y0 < y1 else False
-        else:
-            return True if y1 < y0 < y2 else False
-
 
 class DatasetCreatorVis(DatasetCreator):
+    """Class for visualizing DatasetCreator tasks with rviz."""
 
     def __init__(self):
 
-        # Do ros stuff here
+        rp.init_node('dataset_creator_vis')
+        self.
         super(DatasetCreator, self).__init__()
         pass
 
