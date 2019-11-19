@@ -11,5 +11,14 @@ def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
     """Remove points below z-threshold and return pcl."""
     return data[data[:,2] > z_thresh]
 
-def extract_pcl_features(pcl):
-    """Calculate features for net training from pcl, return in some format."""
+def extract_cluster_features(cluster):
+    """Calculate features for net training from pcl, return in some format.
+
+    Args:
+        cluster: ndarray (n * 3) of xyz points.
+
+    Returns:
+        ???
+
+    """
+    pass

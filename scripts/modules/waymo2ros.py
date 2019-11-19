@@ -53,6 +53,10 @@ class Waymo2Numpy(object):
         random.seed(self.get_label_id(label))
         return [random.uniform(0, 1) for i in range(3)]
 
+    def extract_frame(self, frame):
+        """Get pcl and labels from frame."""
+        return frame2points(frame), frame2labels(frame)
+
     def frame2labels(self, frame):
         """Extract laser labels from waymo data frame."""
         return frame.laser_labels
@@ -173,7 +177,6 @@ class Waymo2RosViz(Waymo2Ros):
 
     def update(self, frame):
         """Publish pointcloud and bounding boxes from given frame."""
-        temp = self.frame2labels(frame)
         points_raw = self.frame2points(frame)
         pcl_msg = self.convert2pcl(points_raw)
         self.pcl_pub.publish(pcl_msg)
