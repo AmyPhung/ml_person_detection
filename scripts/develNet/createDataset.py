@@ -1,22 +1,30 @@
 #!usr/bin/env python
+import logging
 import rospy
-import sys
-sys.path.append('..')
+import time
 
+import numpy as np
+import tensorflow as tf
+
+from collections import namedtuple
 from modules.helperFunctions import *
 from modules.waymo2ros import Waymo2Numpy
 
 
 XYPair = namedtuple('XYPair', 'x y')
+XYZPair = namedtuple('XYZPair', 'x y z')
 
 class DatasetCreator(object):
+    """TODO ADD DOCSTRING"""
+
     def __init__(self):
         """Provide directory location to find frames."""
-        waymo_converter = Waymo2Numpy
+        self.waymo_converter = Waymo2Numpy()
         pass
 
     def filterPcl(self, pcl):
         """Downsample and remove groundplane from pcl."""
+        print('Filtering pointcloud')
         return remove_groundplane(np.array([list(pt) for pt in pcl]))
 
     def clusterByBBox(self, pcl, bboxes):
@@ -29,25 +37,28 @@ class DatasetCreator(object):
         Returns: list of (n * 3) numpy arrays of xyz points
 
         """
+        print('Computing clusters')
         obj_pcls = {}  # Hash map of bbox label : pcl
 
         # Convert from list of tuples to list of XYPairs
-        data_pts = [XYPair(pt[0], pt[1]) for pt in data]
-        print("Found %i markers" % len(bboxes.markers))
+        pcl = [XYPair(pt[0], pt[1]) for pt in pcl]
+        print("Found %i bounding boxes" % len(bboxes))
 
-        for m in bboxes.markers:
+        for bbox in bboxes:
             # Sub-select points into new PointCloud2 if within marker rect
-            print("Parsing marker %i" % m.id)
+            print("Parsing bounding box %s" % bbox.id)
             t = time.time()
-            obj_pcls[m.id] = [pt for pt in data_pts if self.is_in_bbox_fast(m, pt)]
+            obj_pcls[bbox.id] = [pt for pt in pcl if self.is_in_bbox(pt, bbox)]
             print("Took %.2f sec" % (time.time() - t))
 
         return obj_pcls
 
     def computeClusterMetadata(self):
+        print('Computing metadata from cluster')
         pass
 
     def saveClusterMetadata(self):
+        print('Saving cluster metadata')
         pass
 
     def parseFrame(self, frame):
@@ -57,11 +68,12 @@ class DatasetCreator(object):
             frame: waymo open dataset Frame with loaded data
 
         """
-        pcl, bboxes = waymo_converter.extract_frame(frame)
-        pcl = filterPcl(pcl)
-        clusters = clusterByBBox(pcl, bboxes)
-        metadata = [computeClusterMetadata(c) for c in clusters]
-        saveClusterMetadata(metadata)
+        print('Saving dataset points from frame')
+        pcl, bboxes = self.waymo_converter.unpack_frame(frame)
+        pcl = self.filterPcl(pcl)
+        clusters = self.clusterByBBox(pcl, bboxes)
+        metadata = [self.computeClusterMetadata(c) for c in clusters]
+        self.saveClusterMetadata(metadata)
         return
 
     def run(self):
@@ -76,34 +88,33 @@ class DatasetCreator(object):
             + '_with_camera_labels.tfrecord'
         tfrecord = tf.data.TFRecordDataset(DIRECTORY+'/'+FILE, compression_type='')
         for scan in tfrecord:
-            frame = open_dataset.Frame()
-            frame.ParseFromString(bytearray(scan.numpy()))
+            frame = self.waymo_converter.create_frame(scan)
             self.parseFrame(frame)
         return
 
-    def is_in_bbox(self, bbox, point):
+    def is_in_bbox(self, point, label):
         """Return True if point within bbox in xy-plane.
 
         Args:
-            bbox: Marker of type CUBE representing bounding box.
             point: obj representing point to check, has x & y attr
+            bbox: laser scan thing from waymo?
 
         Returns:
             bool True if point in box else False
         """
         
         # Simplify variables for some marker attributes
-        quat = bbox.pose.orientation
-        angle = euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])[2]
-        cntr = bbox.pose.position
+        angle = label.box.heading
+        cntr = XYZPair(
+            label.box.center_x, label.box.center_y, label.box.center_z)
 
         # Calculate offsets in xy-coordinates for each side
         l = XYPair(
-            0.5 * bbox.scale.y * np.cos(np.radians(angle)),
-            0.5 * bbox.scale.y * np.sin(np.radians(angle)))
+            0.5 * label.box.length * np.cos(np.radians(angle)),
+            0.5 * label.box.length * np.sin(np.radians(angle)))
         w = XYPair(
-            0.5 * bbox.scale.x * np.cos(np.radians(90 + angle)),
-            0.5 * bbox.scale.x * np.sin(np.radians(90 + angle)))
+            0.5 * label.box.width * np.cos(np.radians(90 + angle)),
+            0.5 * label.box.width * np.sin(np.radians(90 + angle)))
 
         # Calculate corner points
         p1 = XYPair(cntr.x + l.x + w.x, cntr.y + l.y + w.y)
@@ -128,7 +139,7 @@ class DatasetCreator(object):
         return True if self.is_between_lines(w1, w2, point) \
             and self.is_between_lines(l1, l2, point) else False
 
-    def is_between_lines_readable(self, l1, l2, p):
+    def is_between_lines(self, l1, l2, p):
         """Return true if point is between parallel lines.
 
         Args:

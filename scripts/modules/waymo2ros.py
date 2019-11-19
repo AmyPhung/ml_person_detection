@@ -53,9 +53,21 @@ class Waymo2Numpy(object):
         random.seed(self.get_label_id(label))
         return [random.uniform(0, 1) for i in range(3)]
 
-    def extract_frame(self, frame):
+    def create_frame(self, scan):
+        """Creates frame from scan in tfrecord.
+
+        Example:
+            tfrecord = tf.data.TFRecordDataset(<.tfrecord>, compression_type='')
+            for scan in tfrecord:
+                frame = create_frame(scan)
+        """
+        frame = open_dataset.Frame()
+        frame.ParseFromString(bytearray(scan.numpy()))
+        return frame
+
+    def unpack_frame(self, frame):
         """Get pcl and labels from frame."""
-        return frame2points(frame), frame2labels(frame)
+        return self.frame2points(frame), self.frame2labels(frame)
 
     def frame2labels(self, frame):
         """Extract laser labels from waymo data frame."""
