@@ -11,18 +11,23 @@
 8. `git clone https://github.com/AmyPhung/ml_person_detection`
 9. `catkin_make`
 
+### Helpful Scripts
++ To make a dataset, run `python createDataset.py`
 
 ### Dependencies:
 Package for converting from numpy to PointCloud2
 https://github.com/eric-wieser/ros_numpy
-`pip install --user .`
 
-7. `cd your_catkin_ws/`
-8. `catkin_make`
+1. `git clone https://github.com/eric-wieser/ros_numpy`
+2. Navigate to the ros_numpy directory and run `pip install --user .`
 
 ### Usage
 `roslaunch ml_person_detection bringup.launch`
 Note: make sure FILENAME in waymo2ros.py is set properly
+
+
+### To-Do
++ Settable data directories
 
 ### Troubleshooting
 ##### Tensorflow not installing properly
