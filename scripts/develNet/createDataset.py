@@ -43,12 +43,13 @@ def is_between_lines(l1, l2, p):
         return True if y1 < y0 < y2 else False
 
 
-def is_in_bbox(point, label):
+def is_in_bbox(point, label, logger=None):
     """Return True if point within bbox in xy-plane.
 
     Args:
         point: obj representing point to check, has x & y attr
         bbox: laser scan thing from waymo?
+        logger: python logging object
 
     Returns:
         bool True if point in box else False
@@ -87,8 +88,14 @@ def is_in_bbox(point, label):
         return ((p1.y - p4.y) / (p1.x - p4.x)) * (x - p1.x) + p1.y
 
     # Check that point is between both sets of parallel lines
-    return True if is_between_lines(w1, w2, point) \
-        and is_between_lines(l1, l2, point) else False
+    try:
+        return True if is_between_lines(w1, w2, point) \
+            and is_between_lines(l1, l2, point) else False
+    except ValueError as e:
+        if logger is not None:
+            logger.debug('Warn:non-parallel_lines=True')
+            # TODO show points making lines as debug
+            raise
 
 
 class DatasetCreator(object):
@@ -112,7 +119,7 @@ class DatasetCreator(object):
         else:
             logging.basicConfig(
                 level=logging.INFO, stream=sys.stdout,
-                format="%(asctime)s %(message)s")
+                format="%(asctime)s %(levelname)s %(message)s")
             self.logger = logging.getLogger('datasetCreator')
             self.logger.setLevel(verbosity) if verbosity is not None \
                 else self.logger.setLevel(logging.INFO)
@@ -146,7 +153,12 @@ class DatasetCreator(object):
         for i, bbox in enumerate(bboxes):
 
             # Add pts in bounding box to cluster and remove from pcl
-            cluster = [pt for pt in pcl if is_in_bbox(pt, bbox)]
+            try:
+                cluster = [pt for pt in pcl if is_in_bbox(pt, bbox, self.logger)]
+            except ValueError as e:
+                self.logger.warning('Unable to use bbox due to non-parallel error')
+                continue
+
             pcl = [pt for pt in pcl if pt not in cluster]
             self.logger.info(
                 "Show:bbox=%i|%i, class=%i, id=%s, pt_count=%i"
