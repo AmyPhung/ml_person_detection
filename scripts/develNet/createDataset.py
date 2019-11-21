@@ -2,6 +2,7 @@
 import sys # Needed for relative imports
 sys.path.append('../') # Needed for relative imports
 
+import datetime
 import json
 import logging
 import os.path
@@ -108,21 +109,33 @@ class DatasetCreator(object):
 
     """
 
-    def __init__(self, logger=None, verbosity=None):
+    def __init__(self, data_dir, data_file, logger=None, log_dir=None, verbosity=None):
         """Provide directory location to find frames."""
         self.waymo_converter = Waymo2Numpy()
-        self.data_dir = 'data/train'
+        self.data_dir = data_dir
+        self.data_file = data_file
 
         # Set up logger if not given as arg
         if logger is not None:
             self.logger = logger
         else:
-            logging.basicConfig(
-                level=logging.DEBUG, 
-                filename='/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection/logs/191121.log', 
-                format="%(asctime)s %(levelname)s %(message)s")
+            # Generate log file name
+            d = datetime.datetime.now()
+            filename = ('%s/%i-%i-%i-%i-%i.log'
+                        % (log_dir, d.year, d.month, d.day, d.hour, d.minute))
+
+            # Create logger with file and stream handlers
             self.logger = logging.getLogger('datasetCreator')
-            self.logger.addHandler(logging.StreamHandler(sys.stdout))
+            sh = logging.StreamHandler(sys.stdout)
+            fh = logging.FileHandler(filename)
+
+            # Format file and stream logging
+            formatter = logging.Formatter(
+                '%(asctime)s %(levelname)s %(message)s')
+            fh.setFormatter(formatter)
+            sh.setFormatter(formatter)
+            self.logger.addHandler(fh)
+            self.logger.addHandler(sh)
 
         self.logger.setLevel(verbosity) if verbosity is not None \
             else self.logger.setLevel(logging.INFO)
@@ -264,13 +277,9 @@ class DatasetCreator(object):
 
         """
         self.logger.info('Entr:run')
-        DIRECTORY = '/home/cnovak/Data/waymo-od/'
-        #'/home/amy/test_ws/src/waymo-od/tutorial/'
-        FILE = 'segment-15578655130939579324_620_000_640_000' \
-             + '_with_camera_labels.tfrecord'
         #'frames'
-        tfrecord = tf.data.TFRecordDataset(DIRECTORY+'/'+FILE,
-         compression_type='')
+        tfrecord = tf.data.TFRecordDataset(
+            '%s/%s' % (self.data_dir, self.data_file), compression_type='')
         for i, scan in enumerate(tfrecord):
             frame = self.waymo_converter.create_frame(scan)
             frame.context.name = '%s-%i' % (frame.context.name, i)
@@ -308,7 +317,19 @@ class DatasetCreatorVis(DatasetCreator):
         pass
 
 if __name__ == "__main__":
+    user = 'cnovak'
+    home_dir = '/home/%s' % user
+    catkin_ws = 'catkin_ws/src/ml_person-detection'
+
     visualize = False
+    data_dir = '%s/Data/waymo-od/' % home_dir
+    #data_dir = '/home/amy/test_ws/src/waymo-od/tutorial/'
+    data_file = 'segment-15578655130939579324_620_000_640_000' \
+         + '_with_camera_labels.tfrecord'
+    log_dir = '%s/Workspaces/%s/logs' % (home_dir, catkin_ws)
+
     creator = DatasetCreatorVis() if visualize \
-        else DatasetCreator(verbosity=logging.DEBUG)
+        else DatasetCreator(
+            data_dir=data_dir, data_file=data_file,
+            log_dir=log_dir, verbosity=logging.DEBUG)
     creator.run()  # TODO Setup directory choosing
