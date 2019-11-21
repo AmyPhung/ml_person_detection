@@ -1,7 +1,11 @@
 #!usr/bin/env python
+import sys # Needed for relative imports
+sys.path.append('../') # Needed for relative imports
+
 import logging
 import rospy
 import time
+import json
 
 import numpy as np
 import tensorflow as tf
@@ -49,7 +53,7 @@ def is_in_bbox(point, label):
     Returns:
         bool True if point in box else False
     """
-    
+
     # Simplify variables for some marker attributes
     angle = label.box.heading
     cntr = XYZPair(
@@ -112,7 +116,7 @@ class DatasetCreator(object):
 
         Args:
             pcl: (n * 3) numpy array of xyz points
-            bboxes:
+            bboxes: waymo pcl label output
 
         Returns: list of (n * 3) numpy arrays of xyz points
 
@@ -121,7 +125,7 @@ class DatasetCreator(object):
         obj_pcls = {}  # Hash map of bbox label : pcl
 
         # Convert from list of tuples to list of XYPairs
-        pcl = [XYPair(pt[0], pt[1]) for pt in pcl]
+        pcl = [XYZPair(pt[0], pt[1], pt[2]) for pt in pcl]
         print("Found %i bounding boxes" % len(bboxes))
 
         for bbox in bboxes:
@@ -133,13 +137,36 @@ class DatasetCreator(object):
 
         return obj_pcls
 
-    def computeClusterMetadata(self):
-        print('Computing metadata from cluster')
-        pass
+    def computeClusterMetadata(self, cluster, bbox):
+        """Compute key information from cluster to boil down pointcloud infoself.
 
-    def saveClusterMetadata(self):
+        Args:
+            cluster: list of xyz points within cluster
+            bbox: waymo object label output
+
+        Returns:
+            features: Features object containing cluster features
+        """
+
+        print('Computing metadata from cluster')
+        np_cluster = np.array(cluster)
+        features = extract_cluster_features(np_cluster, bbox)
+        return features
+
+    def saveClusterMetadata(self, metadata, name):
+        """Save cluster metadata from frame in a .json file. Uses frame name as
+        .json filename
+
+        Args:
+            metadata: list of Features objects containing key information about
+                each cluster in frame
+            name: name of frame
+        """
         print('Saving cluster metadata')
-        pass
+
+        # lambda function is used to serialize custom Features object
+        with open('../data/train/' + str(name) + '.json', 'w') as outfile:
+            json.dump(metadata, outfile, default=lambda o: o.__dict__, indent=4)
 
     def parseFrame(self, frame):
         """Extract and save data from a single given frame.
@@ -152,8 +179,10 @@ class DatasetCreator(object):
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
         pcl = self.filterPcl(pcl)
         clusters = self.clusterByBBox(pcl, bboxes)
-        metadata = [self.computeClusterMetadata(c) for c in clusters]
-        self.saveClusterMetadata(metadata)
+        metadata = [self.computeClusterMetadata(clusters.values()[i],\
+                                                bboxes[:2][i]) \
+                    for i in range(len(bboxes))]
+        self.saveClusterMetadata(metadata, frame.context.name)
         return
 
     def run(self):
@@ -164,9 +193,12 @@ class DatasetCreator(object):
 
         """
         DIRECTORY = '/home/cnovak/Data/waymo-od/'
+        #'/home/amy/test_ws/src/waymo-od/tutorial/'
         FILE = 'segment-15578655130939579324_620_000_640_000' \
-            + '_with_camera_labels.tfrecord'
-        tfrecord = tf.data.TFRecordDataset(DIRECTORY+'/'+FILE, compression_type='')
+             + '_with_camera_labels.tfrecord'
+        #'frames'
+        tfrecord = tf.data.TFRecordDataset(DIRECTORY+'/'+FILE,
+         compression_type='')
         for scan in tfrecord:
             frame = self.waymo_converter.create_frame(scan)
             self.parseFrame(frame)
@@ -179,7 +211,6 @@ class DatasetCreatorVis(DatasetCreator):
     def __init__(self):
 
         rp.init_node('dataset_creator_vis')
-        self.
         super(DatasetCreator, self).__init__()
         pass
 
