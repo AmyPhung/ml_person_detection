@@ -118,11 +118,14 @@ class DatasetCreator(object):
             self.logger = logger
         else:
             logging.basicConfig(
-                level=logging.INFO, stream=sys.stdout,
+                level=logging.DEBUG, 
+                filename='/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection/logs/191121.log', 
                 format="%(asctime)s %(levelname)s %(message)s")
             self.logger = logging.getLogger('datasetCreator')
-            self.logger.setLevel(verbosity) if verbosity is not None \
-                else self.logger.setLevel(logging.INFO)
+            self.logger.addHandler(logging.StreamHandler(sys.stdout))
+
+        self.logger.setLevel(verbosity) if verbosity is not None \
+            else self.logger.setLevel(logging.INFO)
 
     def filterPcl(self, pcl):
         """Downsample and remove groundplane from pcl."""
