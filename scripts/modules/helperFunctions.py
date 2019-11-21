@@ -26,6 +26,7 @@ def extract_cluster_features(cluster, bbox):
     """
 
     id = bbox.id
+    cls = bbox.type
 
     # Compute eigenvalues along all three axes
     xyz_cov = np.cov(np.transpose(cluster))
@@ -35,7 +36,7 @@ def extract_cluster_features(cluster, bbox):
     vol = bbox.box.width * bbox.box.height
     density = cluster.shape[0]/vol
 
-    output = Features(id, e_x, e_y, e_z, vol, density)
+    output = Features(id, cls, e_x, e_y, e_z, vol, density)
     return output
 
 class Features(object):
@@ -50,8 +51,9 @@ class Features(object):
         density = point density of cluster (num pts / volume)
 
     """
-    def __init__(self, cluster_id, e_x=0, e_y=0, e_z=0, vol=0, density=0):
+    def __init__(self, cluster_id, cls, e_x=0, e_y=0, e_z=0, vol=0, density=0):
         self.cluster_id = cluster_id
+        self.cls = cls 
         self.e_x = e_x
         self.e_y = e_y
         self.e_z = e_z
