@@ -3,6 +3,7 @@ import sys # Needed for relative imports
 sys.path.append('../') # Needed for relative imports
 
 import datetime
+import glob
 import json
 import logging
 import os.path
@@ -20,83 +21,29 @@ XYPair = namedtuple('XYPair', 'x y')
 XYZPair = namedtuple('XYZPair', 'x y z')
 
 
-def is_between_lines(l1, l2, p):
-    """Return true if point is between parallel lines.
+def get_pts_in_bbox(pcl, bbox, logger=None):
+    """Return ndarray of points from pcl within bbox."""
+    # Get bbox limits in bbox coord frame
+    x_lo = bbox.box.center_x - bbox.box.length/2
+    x_hi = bbox.box.center_x + bbox.box.length/2
+    y_lo = bbox.box.center_y - bbox.box.width/2
+    y_hi = bbox.box.center_y + bbox.box.width/2
+    if logger is not None:
+        logger.debug('bbox limits: %0.2f-%0.2f, %0.2f-%0.2f'
+            % (x_lo, x_hi, y_lo, y_hi))
+ 
+    # Rotate pcl by bbox heading angle
+    ang = np.radians(bbox.box.heading)
+    r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
+    r_pcl = np.matmul(pcl[:, 0:2], r_mat)
+    r_pcl = np.append(r_pcl, np.expand_dims(pcl[:, 2], 1), axis=1)
 
-    Args:
-        l1: function that returns y for any x
-        l2: function that returns y for any x
-        p: some obj with x and y attr
-
-    Returns:
-        bool if point between parallel lines.
-
-    """
-    if not abs(round(l1(-2) - l1(2), 3)) \
-            == abs(round(l2(-2) - l2(2), 3)):
-        raise ValueError('lines are not parallel!')
-
-    y0, y1, y2 = p.y, l1(p.x), l2(p.x)
-    # If line 1 is above line 2
-    if y1 > y2:
-        return True if y2 < y0 < y1 else False
-    else:
-        return True if y1 < y0 < y2 else False
-
-
-def is_in_bbox(point, label, logger=None):
-    """Return True if point within bbox in xy-plane.
-
-    Args:
-        point: obj representing point to check, has x & y attr
-        bbox: laser scan thing from waymo?
-        logger: python logging object
-
-    Returns:
-        bool True if point in box else False
-    """
-
-    # Simplify variables for some marker attributes
-    angle = label.box.heading
-    cntr = XYZPair(
-        label.box.center_x, label.box.center_y, label.box.center_z)
-
-    # Calculate offsets in xy-coordinates for each side
-    l = XYPair(
-        0.5 * label.box.length * np.cos(np.radians(angle)),
-        0.5 * label.box.length * np.sin(np.radians(angle)))
-    w = XYPair(
-        0.5 * label.box.width * np.cos(np.radians(90 + angle)),
-        0.5 * label.box.width * np.sin(np.radians(90 + angle)))
-
-    # Calculate corner points
-    p1 = XYPair(cntr.x + l.x + w.x, cntr.y + l.y + w.y)
-    p2 = XYPair(cntr.x - l.x - w.x, cntr.y - l.y - w.y)
-    p3 = XYPair(cntr.x + l.x - w.x, cntr.y + l.y - w.y)
-    p4 = XYPair(cntr.x - l.x + w.x, cntr.y - l.y + w.y)
-
-    # Create functions for lines representing bbox sides
-    def w1(x):
-        return ((p4.y - p2.y) / (p4.x - p2.x)) * (x - p4.x) + p4.y
-
-    def w2(x):
-        return ((p3.y - p1.y) / (p3.x - p1.x)) * (x - p3.x) + p3.y
-
-    def l1(x):
-        return ((p2.y - p3.y) / (p2.x - p3.x)) * (x - p2.x) + p2.y
-
-    def l2(x):
-        return ((p1.y - p4.y) / (p1.x - p4.x)) * (x - p1.x) + p1.y
-
-    # Check that point is between both sets of parallel lines
-    try:
-        return True if is_between_lines(w1, w2, point) \
-            and is_between_lines(l1, l2, point) else False
-    except ValueError as e:
-        if logger is not None:
-            logger.debug('Warn:non-parallel_lines=True')
-            # TODO show points making lines as debug
-            raise
+    # Sub-select pcl by bbox limits
+    indxs = np.where(
+        (x_lo < r_pcl[:, 0]) & (r_pcl[:, 0] < x_hi)
+        & (y_lo < r_pcl[:, 1]) & (r_pcl[:, 1] < y_hi))[0]
+    pcl_out = r_pcl[indxs]
+    return pcl_out
 
 
 class DatasetCreator(object):
@@ -109,11 +56,11 @@ class DatasetCreator(object):
 
     """
 
-    def __init__(self, data_dir, data_file, logger=None, log_dir=None, verbosity=None):
+    def __init__(self, load_dir, save_dir, logger=None, log_dir=None, verbosity=None):
         """Provide directory location to find frames."""
         self.waymo_converter = Waymo2Numpy()
-        self.data_dir = data_dir
-        self.data_file = data_file
+        self.load_dir = load_dir
+        self.save_dir = save_dir
 
         # Set up logger if not given as arg
         if logger is not None:
@@ -161,31 +108,20 @@ class DatasetCreator(object):
         """
         self.logger.info('Entr:clusterByBBox')
         obj_pcls = {}  # Hash map of bbox label : pcl
-
-        # Convert from list of tuples to list of XYPairs
-        pcl = [XYZPair(pt[0], pt[1], pt[2]) for pt in pcl]
         self.logger.info("Show:bbox_count: %i" % len(bboxes))
 
-        for i, bbox in enumerate(bboxes):
+        for i, label in enumerate(bboxes):
 
-            # Add pts in bounding box to cluster and remove from pcl
-            try:
-                cluster = [pt for pt in pcl if is_in_bbox(pt, bbox, self.logger)]
-            except ValueError as e:
-                self.logger.warning('Unable to use bbox due to non-parallel error')
-                continue
-
-            pcl = [pt for pt in pcl if pt not in cluster]
+            cluster = get_pts_in_bbox(pcl, label, self.logger) 
             self.logger.info(
-                "Show:bbox=%i|%i, class=%i, id=%s, pt_count=%i"
-                % (i, len(bboxes), bbox.type, bbox.id, len(cluster)))
-            self.logger.debug("Show:pcl_len=%i" % len(pcl))
+                "bbox=%i * %i, class=%i, id=%s, pt_count=%i"
+                % (i, len(bboxes), label.type, label.id, len(cluster)))
 
             # Threshold cluster size
             if len(cluster) >= thresh:
-                obj_pcls[bbox.id] = cluster
+                obj_pcls[label.id] = cluster
             else:
-                obj_pcls[bbox.id] = None
+                obj_pcls[label.id] = None
                 self.logger.info(
                     "Note:cluster_size=%i < threshold=%i"\
                     % (len(cluster), thresh))
@@ -226,7 +162,7 @@ class DatasetCreator(object):
             name: name of frame
         """
         self.logger.info('Entr:saveClusterMetadata')
-        filename = '%s/%s.json' % (self.data_dir, str(name))
+        filename = '%s/%s.json' % (self.save_dir, str(name))
         self.logger.info('Show:save_loc=%s' % filename)
 
         # lambda function is used to serialize custom Features object
@@ -261,15 +197,16 @@ class DatasetCreator(object):
 
         """
         self.logger.info('Entr:checkDataFile')
-        file = '%s/%s.json' % (self.data_dir, frame.context.name)
+        file = '%s/%s.json' % (self.save_dir, frame.context.name)
         self.logger.debug('Show:frame_file=%s' % file)
         self.logger.info('Exit:checkDataFile')
         return os.path.isfile(file)
 
-    def run(self, overwrite=False):
+    def run(self, data_file, overwrite=False):
         """Generate data for all scans in all .tfrecord files in dir.
 
         Args:
+            data_file: str .tfrecord file to parse
             overwrite: Bool for overwriting already existing data
 
         Todo:
@@ -278,8 +215,7 @@ class DatasetCreator(object):
         """
         self.logger.info('Entr:run')
         #'frames'
-        tfrecord = tf.data.TFRecordDataset(
-            '%s/%s' % (self.data_dir, self.data_file), compression_type='')
+        tfrecord = tf.data.TFRecordDataset(data_file, compression_type='')
         for i, scan in enumerate(tfrecord):
             frame = self.waymo_converter.create_frame(scan)
             frame.context.name = '%s-%i' % (frame.context.name, i)
@@ -319,17 +255,20 @@ class DatasetCreatorVis(DatasetCreator):
 if __name__ == "__main__":
     user = 'cnovak'
     home_dir = '/home/%s' % user
-    catkin_ws = 'catkin_ws/src/ml_person-detection'
+    catkin_ws = 'catkin_ws/src/ml_person_detection'
 
     visualize = False
-    data_dir = '%s/Data/waymo-od/' % home_dir
-    #data_dir = '/home/amy/test_ws/src/waymo-od/tutorial/'
+    load_dir = '%s/Data/waymo-od' % home_dir
+    #load_dir = '/home/amy/test_ws/src/waymo-od/tutorial/'
+    save_dir = '%s/Workspaces/%s/data/train' % (home_dir, catkin_ws)
     data_file = 'segment-15578655130939579324_620_000_640_000' \
          + '_with_camera_labels.tfrecord'
     log_dir = '%s/Workspaces/%s/logs' % (home_dir, catkin_ws)
 
     creator = DatasetCreatorVis() if visualize \
         else DatasetCreator(
-            data_dir=data_dir, data_file=data_file,
-            log_dir=log_dir, verbosity=logging.DEBUG)
-    creator.run()  # TODO Setup directory choosing
+            load_dir=load_dir, save_dir=save_dir, log_dir=log_dir,
+            verbosity=logging.DEBUG)
+    
+    for f in glob.glob('%s/*.tfrecord' % load_dir):
+        creator.run(f)  # TODO Setup directory choosing
