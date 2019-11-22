@@ -14,12 +14,13 @@ def json2csv(dir, tfrecord):
         tfrecord: str id of tfrecord (json files stored as <tfrecord>-#.json
 
     """
-    
+
     dict_data = []
-    fieldnames = ['frame_index', 'cluster_id', 'cls', 'density', 'vol', 'e_x', 'e_y', 'e_z']
+    fieldnames = [
+        'frame_index', 'cluster_id', 'cnt', 'cls', 'density', 'vol', 'e_x', 'e_y', 'e_z']
 
     # Populate dict_data from all .json files
-    for f in glob.glob('%s/%s*.json' % (dir, tfrecord)):
+    for f in glob.glob('%s/*.json' % dir):
         frame_index = int(re.search('-([0-9]+).json$', f).group(1))
 
         with open(f, 'r') as read_file:
@@ -30,7 +31,7 @@ def json2csv(dir, tfrecord):
 
     # Write dict_data to csv
     try:
-        with open('%s.csv' % tfrecord, 'wb') as csvfile:
+        with open('%s.csv' % tfrecord, 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for data in dict_data:
@@ -41,5 +42,5 @@ def json2csv(dir, tfrecord):
 if __name__ == "__main__":
 
     json2csv(
-        '/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection/scripts/data/train',
+        '/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection/data/train',
         '15578655130939579324_620_000_640_000')
