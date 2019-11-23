@@ -86,13 +86,15 @@ class DatasetCreator(object):
 
         self.logger.setLevel(verbosity) if verbosity is not None \
             else self.logger.setLevel(logging.INFO)
+        self.logger.info('Logging set up for createDataset object')
+        self.logger.debug('Exit:__init__')
 
     def filterPcl(self, pcl):
         """Downsample and remove groundplane from pcl."""
-        self.logger.info('Entr:filterPcl')
+        self.logger.debug('Entr:filterPcl')
         pcl_out = remove_groundplane(np.array([list(pt) for pt in pcl]))
         self.logger.debug('Show:pts_removed=%i' % (len(pcl) - len(pcl_out)))
-        self.logger.info('Exit:filterPcl')
+        self.logger.debug('Exit:filterPcl')
         return pcl_out
 
     def clusterByBBox(self, pcl, bboxes, thresh=25):
@@ -106,9 +108,9 @@ class DatasetCreator(object):
         Returns: list of (n * 3) numpy arrays of xyz points
 
         """
-        self.logger.info('Entr:clusterByBBox')
+        self.logger.debug('Entr:clusterByBBox')
         obj_pcls = {}  # Hash map of bbox label : pcl
-        self.logger.info("Show:bbox_count: %i" % len(bboxes))
+        self.logger.info("bbox_count: %i" % len(bboxes))
 
         for i, label in enumerate(bboxes):
 
@@ -122,13 +124,13 @@ class DatasetCreator(object):
                 obj_pcls[label.id] = cluster
             else:
                 obj_pcls[label.id] = None
-                self.logger.info(
-                    "Note:cluster_size=%i < threshold=%i"\
+                self.logger.warning(
+                    "cluster_size=%i under threshold=%i"\
                     % (len(cluster), thresh))
 
             #if i == 5: break  # Uncomment to use subset of bboxes for debug
 
-        self.logger.info('Exit:clusterByBBox')
+        self.logger.debug('Exit:clusterByBBox')
         return obj_pcls
 
     def computeClusterMetadata(self, cluster, bbox):
@@ -142,14 +144,14 @@ class DatasetCreator(object):
             features: Features object containing cluster features
         """
 
-        self.logger.info('Entr:computeClusterMetadata')
+        self.logger.debug('Entr:computeClusterMetadata')
         if cluster is None:
             raise TypeError(
                 'None passed as cluster - ' \
                 + 'possibly a too-small cluster passed from clusterByBBox?')
         np_cluster = np.array(cluster)
         features = extract_cluster_features(np_cluster, bbox)
-        self.logger.info('Exit:computeClusterMetadata')
+        self.logger.debug('Exit:computeClusterMetadata')
         return features
 
     def saveClusterMetadata(self, metadata, name):
@@ -161,15 +163,15 @@ class DatasetCreator(object):
                 each cluster in frame
             name: name of frame
         """
-        self.logger.info('Entr:saveClusterMetadata')
+        self.logger.debug('Entr:saveClusterMetadata')
         filename = '%s/%s.json' % (self.save_dir, str(name))
-        self.logger.info('Show:save_loc=%s' % filename)
+        self.logger.info('save_loc=%s' % filename)
 
         # lambda function is used to serialize custom Features object
         with open(filename, 'w') as outfile:
             json.dump(metadata, outfile, default=lambda o: o.__dict__, indent=4)
 
-        self.logger.info('Exit:saveClusterMetadata')
+        self.logger.debug('Exit:saveClusterMetadata')
 
     def parseFrame(self, frame):
         """Extract and save data from a single given frame.
@@ -178,14 +180,14 @@ class DatasetCreator(object):
             frame: waymo open dataset Frame with loaded data
 
         """
-        self.logger.info('Entr:parseFrame')
+        self.logger.debug('Entr:parseFrame')
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
         pcl = self.filterPcl(pcl)
         clusters = self.clusterByBBox(pcl, bboxes)
         metadata = [self.computeClusterMetadata(c, bboxes[i])
             for i, c in enumerate(clusters.values()) if c is not None]
         self.saveClusterMetadata(metadata, frame.context.name)
-        self.logger.info('Exit:parseFrame')
+        self.logger.debug('Exit:parseFrame')
         return
 
     def checkDataFile(self, frame):
@@ -196,10 +198,10 @@ class DatasetCreator(object):
                 create filename for which to check
 
         """
-        self.logger.info('Entr:checkDataFile')
+        self.logger.debug('Entr:checkDataFile')
         file = '%s/%s.json' % (self.save_dir, frame.context.name)
         self.logger.debug('Show:frame_file=%s' % file)
-        self.logger.info('Exit:checkDataFile')
+        self.logger.debug('Exit:checkDataFile')
         return os.path.isfile(file)
 
     def run(self, data_file, overwrite=False):
@@ -213,21 +215,22 @@ class DatasetCreator(object):
             put glob + directory stuff here
 
         """
-        self.logger.info('Entr:run')
+        self.logger.debug('Entr:run')
         #'frames'
         tfrecord = tf.data.TFRecordDataset(data_file, compression_type='')
         for i, scan in enumerate(tfrecord):
             frame = self.waymo_converter.create_frame(scan)
             frame.context.name = '%s-%i' % (frame.context.name, i)
             if self.checkDataFile(frame) and not overwrite:
-                self.logger.info('Show:framedata_exists=True')
+                self.logger.info(
+                    'frame %s is already parsed.' % str(frame.context.name))
                 continue
             self.logger.info(
-                'Show:frame_num=%i, frame_id=%s' \
+                'frame_num=%i, frame_id=%s' \
                 % (i, str(frame.context.name)))
             self.parseFrame(frame)
 
-        self.logger.info('Exit:run')
+        self.logger.debug('Exit:run')
         return
 
 
@@ -256,19 +259,18 @@ if __name__ == "__main__":
     user = 'cnovak'
     home_dir = '/home/%s' % user
     catkin_ws = 'catkin_ws/src/ml_person_detection'
+    dataset = 'training_0001'
 
     visualize = False
-    load_dir = '%s/Data/waymo-od' % home_dir
+    load_dir = '%s/Data/waymo-od/%s' % (home_dir, dataset)
     #load_dir = '/home/amy/test_ws/src/waymo-od/tutorial/'
-    save_dir = '%s/Workspaces/%s/data/train' % (home_dir, catkin_ws)
-    data_file = 'segment-15578655130939579324_620_000_640_000' \
-         + '_with_camera_labels.tfrecord'
+    save_dir = '%s/Workspaces/%s/data/%s' % (home_dir, catkin_ws, dataset)
     log_dir = '%s/Workspaces/%s/logs' % (home_dir, catkin_ws)
 
     creator = DatasetCreatorVis() if visualize \
         else DatasetCreator(
             load_dir=load_dir, save_dir=save_dir, log_dir=log_dir,
-            verbosity=logging.DEBUG)
+            verbosity=logging.INFO)
     
     for f in glob.glob('%s/*.tfrecord' % load_dir):
         creator.run(f)  # TODO Setup directory choosing
