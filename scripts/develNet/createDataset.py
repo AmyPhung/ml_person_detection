@@ -31,7 +31,7 @@ def get_pts_in_bbox(pcl, bbox, logger=None):
     if logger is not None:
         logger.debug('bbox limits: %0.2f-%0.2f, %0.2f-%0.2f'
             % (x_lo, x_hi, y_lo, y_hi))
- 
+
     # Rotate pcl by bbox heading angle
     ang = np.radians(bbox.box.heading)
     r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
@@ -114,7 +114,7 @@ class DatasetCreator(object):
 
         for i, label in enumerate(bboxes):
 
-            cluster = get_pts_in_bbox(pcl, label, self.logger) 
+            cluster = get_pts_in_bbox(pcl, label, self.logger)
             self.logger.info(
                 "bbox=%i * %i, class=%i, id=%s, pt_count=%i"
                 % (i, len(bboxes), label.type, label.id, len(cluster)))
@@ -150,7 +150,13 @@ class DatasetCreator(object):
                 'None passed as cluster - ' \
                 + 'possibly a too-small cluster passed from clusterByBBox?')
         np_cluster = np.array(cluster)
-        features = extract_cluster_features(np_cluster, bbox)
+
+        features = Features()
+        features.cluster_id = bbox.id
+        features.cls = bbox.type
+        features.cnt = cluster.shape[0]
+        features.parameters = extract_cluster_parameters(np_cluster, display=False)
+
         self.logger.debug('Exit:computeClusterMetadata')
         return features
 
