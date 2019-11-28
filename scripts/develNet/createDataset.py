@@ -1,4 +1,4 @@
-#!usr/bin/env python
+#!/usr/bin/env python
 import sys # Needed for relative imports
 sys.path.append('../') # Needed for relative imports
 
@@ -7,18 +7,21 @@ import glob
 import json
 import logging
 import os.path
-import rospy
+import rospy as rp
 
 import numpy as np
 import tensorflow as tf
 
 from collections import namedtuple
 from modules.helperFunctions import *
-from modules.waymo2ros import Waymo2Numpy
+from modules.waymo2ros import Waymo2Numpy, Waymo2Ros
+from sensor_msgs.msg import PointCloud2
+from visualization_msgs.msg import MarkerArray
 
 
 XYPair = namedtuple('XYPair', 'x y')
 XYZPair = namedtuple('XYZPair', 'x y z')
+
 
 
 def get_pts_in_bbox(pcl, bbox, logger=None):
@@ -56,11 +59,11 @@ class DatasetCreator(object):
 
     """
 
-    def __init__(self, load_dir, save_dir, logger=None, log_dir=None, verbosity=None):
+    def __init__(self, dir_load, dir_save, logger=None, dir_log=None, verbosity=None):
         """Provide directory location to find frames."""
         self.waymo_converter = Waymo2Numpy()
-        self.load_dir = load_dir
-        self.save_dir = save_dir
+        self.dir_load = dir_load
+        self.dir_save = dir_save
 
         # Set up logger if not given as arg
         if logger is not None:
@@ -69,7 +72,7 @@ class DatasetCreator(object):
             # Generate log file name
             d = datetime.datetime.now()
             filename = ('%s/%i-%i-%i-%i-%i.log'
-                        % (log_dir, d.year, d.month, d.day, d.hour, d.minute))
+                        % (dir_log, d.year, d.month, d.day, d.hour, d.minute))
 
             # Create logger with file and stream handlers
             self.logger = logging.getLogger('datasetCreator')
@@ -110,12 +113,12 @@ class DatasetCreator(object):
         """
         self.logger.debug('Entr:clusterByBBox')
         obj_pcls = {}  # Hash map of bbox label : pcl
-        self.logger.info("bbox_count: %i" % len(bboxes))
+        self.logger.info("bbox initial count: %i" % len(bboxes))
 
         for i, label in enumerate(bboxes):
 
             cluster = get_pts_in_bbox(pcl, label, self.logger)
-            self.logger.info(
+            self.logger.debug(
                 "bbox=%i * %i, class=%i, id=%s, pt_count=%i"
                 % (i, len(bboxes), label.type, label.id, len(cluster)))
 
@@ -131,10 +134,11 @@ class DatasetCreator(object):
             #if i == 5: break  # Uncomment to use subset of bboxes for debug
 
         self.logger.debug('Exit:clusterByBBox')
+        self.logger.info("bbox final count: %i" % len([o for o in obj_pcls if o is not None]))
         return obj_pcls
 
     def computeClusterMetadata(self, cluster, bbox):
-        """Compute key information from cluster to boil down pointcloud infoself.
+        """Compute key information from cluster to boil down pointcloud info.
 
         Args:
             cluster: list of xyz points within cluster
@@ -170,7 +174,7 @@ class DatasetCreator(object):
             name: name of frame
         """
         self.logger.debug('Entr:saveClusterMetadata')
-        filename = '%s/%s.json' % (self.save_dir, str(name))
+        filename = '%s/%s.json' % (self.dir_save, str(name))
         self.logger.info('save_loc=%s' % filename)
 
         # lambda function is used to serialize custom Features object
@@ -205,7 +209,7 @@ class DatasetCreator(object):
 
         """
         self.logger.debug('Entr:checkDataFile')
-        file = '%s/%s.json' % (self.save_dir, frame.context.name)
+        file = '%s/%s.json' % (self.dir_save, frame.context.name)
         self.logger.debug('Show:frame_file=%s' % file)
         self.logger.debug('Exit:checkDataFile')
         return os.path.isfile(file)
@@ -230,11 +234,11 @@ class DatasetCreator(object):
             if self.checkDataFile(frame) and not overwrite:
                 self.logger.info(
                     'frame %s is already parsed.' % str(frame.context.name))
-                continue
-            self.logger.info(
-                'frame_num=%i, frame_id=%s' \
-                % (i, str(frame.context.name)))
-            self.parseFrame(frame)
+            else:
+                self.logger.info(
+                    'frame_num=%i, frame_id=%s' \
+                    % (i, str(frame.context.name)))
+                self.parseFrame(frame)
 
         self.logger.debug('Exit:run')
         return
@@ -243,40 +247,98 @@ class DatasetCreator(object):
 class DatasetCreatorVis(DatasetCreator):
     """Class for visualizing DatasetCreator tasks with rviz."""
 
-    def __init__(self):
+    def __init__(
+            self, dir_load, dir_save, logger=None, dir_log=None,
+            verbosity=None, visualize=0):
+        """Initialize Ros components, DatasetCreator, visualize setting."""
 
-        rp.init_node('dataset_creator_vis')
-        super(DatasetCreator, self).__init__()
-        pass
+        self.visualize = visualize
+        self.ros_converter = Waymo2Ros()
+        rp.init_node('dataset_creator_vis', disable_signals=True)
+        self.marker_pub = rp.Publisher('/bboxes', MarkerArray, queue_size=1)
+        self.pcl_pub = rp.Publisher('/pcl', PointCloud2, queue_size=1)
+        DatasetCreator.__init__(
+            self, dir_load=dir_load, dir_save=dir_save, logger=logger,
+            dir_log=dir_log, verbosity=verbosity)
+        self.logger.debug('Exit:__init__')
 
-    def parseFrame(self):
-        """Overwrite CreateDataset run function, insert viz."""
+    def parseFrame(self, frame):
+        """Extract and save data from a single given frame, viz if specified.
 
-        # load frame (from file)
-        # publish to ros
-        # publsih markers and such to ros
-        # filter frame
-        # cluster
-        # compute
-        # save
-        pass
+        If self.visualize is 1, shows original data.
+        If self.visualize is 2, shows clustered data.
+        
+        Args:
+            frame: waymo open dataset Frame with loaded data
+
+        """
+        self.logger.debug('Entr:parseFrame')
+        pcl, bboxes = self.waymo_converter.unpack_frame(frame)
+        if self.visualize == 1:
+            self.pcl_pub.publish(
+                self.ros_converter.convert2pcl(pcl))
+            self.marker_pub.publish(
+                self.ros_converter.convert2markerarray(bboxes))
+
+        pcl = self.filterPcl(pcl)
+        clusters = self.clusterByBBox(pcl, bboxes)
+        if self.visualize == 2:
+            #try:
+            good_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
+            self.pcl_pub.publish(self.ros_converter.convert2pcl(
+                np.concatenate(good_clusters.values())))
+            self.marker_pub.publish(self.ros_converter.convert2markerarray(
+                [b for b in bboxes if str(b.id) in good_clusters.keys()]))
+            #except:
+                #self.logger.warning("No pcl with count > 25 pts")
+
+        metadata = [self.computeClusterMetadata(c, bboxes[i])
+            for i, c in enumerate(clusters.values()) if c is not None]
+        self.saveClusterMetadata(metadata, frame.context.name)
+        self.logger.debug('Exit:parseFrame')
+        return
+
 
 if __name__ == "__main__":
+    """Set up directory locations and create dataset."""
+
+    enable_rviz = rp.get_param("/enable_rviz", False)
+
     user = 'cnovak'
-    home_dir = '/home/%s' % user
-    catkin_ws = 'catkin_ws/src/ml_person_detection'
+    loc_pkg = '/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection'
     dataset = 'training_0001'
 
-    visualize = False
-    load_dir = '%s/Data/waymo-od/%s' % (home_dir, dataset)
-    #load_dir = '/home/amy/test_ws/src/waymo-od/tutorial/'
-    save_dir = '%s/Workspaces/%s/data/%s' % (home_dir, catkin_ws, dataset)
-    log_dir = '%s/Workspaces/%s/logs' % (home_dir, catkin_ws)
+    args_default = {
+        'dir_load' : '/home/%s/Data/waymo-od/%s' % (user, dataset),
+        'dir_log' : '%s/logs' % loc_pkg,
+        'dir_save' : '%s/data/%s' % (loc_pkg, dataset),
+        'verbosity' : logging.DEBUG,
+        'visualize' : 2
+    }
+    print(args_default)
 
-    creator = DatasetCreatorVis() if visualize \
-        else DatasetCreator(
-            load_dir=load_dir, save_dir=save_dir, log_dir=log_dir,
-            verbosity=logging.INFO)
+    if enable_rviz:
+        dir_load = rp.get_param("/dir_load", args_default['dir_load'])
+        dir_log = rp.get_param("/dir_log", args_default['dir_log'])
+        dir_save = rp.get_param("/dir_save", args_default['dir_save'])
+        verbosity = int(rp.get_param("/verbosity", args_default['verbosity']))
+        visualize = int(rp.get_param("/visualize", args_default['visualize']))
+
+        creator = DatasetCreatorVis(
+            dir_load=dir_load, dir_save=dir_save, dir_log=dir_log,
+            verbosity=verbosity, visualize=visualize)
+
+    else: 
+        dir_load = args_default['dir_load']
+        dir_log = args_default['dir_log']
+        dir_save = args_default['dir_save']
+        verbosity = args_default['verbosity']
+        visualize = args_default['visualize']
+
+        creator = DatasetCreator(
+            dir_load=dir_load, dir_save=dir_save, dir_log=dir_log,
+            verbosity=verbosity)
     
-    for f in glob.glob('%s/*.tfrecord' % load_dir):
-        creator.run(f)  # TODO Setup directory choosing
+    creator.logger.info("enable_rviz = %s" % enable_rviz)
+    for f in glob.glob('%s/*.tfrecord' % dir_load):
+        creator.run(f)
