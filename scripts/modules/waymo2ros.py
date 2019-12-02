@@ -120,7 +120,7 @@ class Waymo2Ros(Waymo2Numpy):
 
     def __init__(self):
         """Initialize parent class."""
-        super(Waymo2Numpy, self).__init__()
+        Waymo2Numpy.__init__(self)
 
     def convert2pcl(self, points, frame_id='base_link'):
         """Convert list of points into ros PointCloud2 msg.
@@ -204,7 +204,7 @@ class Waymo2RosViz(Waymo2Ros):
             "/pcl", PointCloud2, queue_size=1)
         self.box_pub = rp.Publisher(
             "/visualization_marker_array", MarkerArray, queue_size=1)
-        super(Waymo2RosViz, self).__init__()
+        Waymo2Ros.__init__(self)
 
     def update(self, frame):
         """Publish pointcloud and bounding boxes from given frame."""
@@ -310,7 +310,7 @@ if __name__ == "__main__":
     converter = Waymo2RosViz()
 
     # TODO: Make this more general
-    DIRECTORY = '/home/cnovak/Data/waymo-od/'
+    DIRECTORY = '/home/cnovak/Data/waymo-od/training_0000'
     FILE = 'segment-15578655130939579324_620_000_640_000' \
         + '_with_camera_labels.tfrecord'
     dataset = tf.data.TFRecordDataset(DIRECTORY+'/'+FILE, compression_type='')
