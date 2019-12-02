@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Module for shared code between waymo pipeline and panasonic pipeline.
 
 This module holds functions that are used in both pipelines:
@@ -6,9 +7,11 @@ This module holds functions that are used in both pipelines:
 """
 import numpy as np
 from scipy.spatial import ConvexHull, convex_hull_plot_2d
+from scipy.signal import resample
 import matplotlib.pyplot as plt
 
 GROUND_THRESHOLD = 1  # meters
+MAX_CLUSTER_PTS = 200 # max number of points in a cluster
 
 def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
     """Remove points below z-threshold and return pcl."""
@@ -29,6 +32,10 @@ def extract_cluster_parameters(cluster, display=False):
             vol = volume of bounding box
             density = point density of cluster (num pts / volume)
     """
+    # Downsample to smaller number of points - objects close to lidar contain
+    # significantly more points than ones further away
+    if cluster.shape[0] > MAX_CLUSTER_PTS:
+        cluster = resample(cluster, MAX_CLUSTER_PTS, t=None, axis=0, window=None)
 
     # Compute eigenvalues along all three axes
     xyz_cov = np.cov(np.transpose(cluster))
@@ -37,6 +44,9 @@ def extract_cluster_parameters(cluster, display=False):
     # Compute volume and point density
     vol = compute_volume(cluster, display)
     density = cluster.shape[0]/vol
+
+    # Compute maximum and mean object intensity
+    # TODO
 
     output = [e_x, e_y, e_z, vol, density]
     return output
