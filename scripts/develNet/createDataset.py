@@ -1,4 +1,4 @@
-#!usr/bin/env python
+#!/usr/bin/env python
 import sys # Needed for relative imports
 sys.path.append('../') # Needed for relative imports
 
@@ -32,11 +32,13 @@ def get_pts_in_bbox(pcl, bbox, logger=None):
         logger.debug('bbox limits: %0.2f-%0.2f, %0.2f-%0.2f'
             % (x_lo, x_hi, y_lo, y_hi))
 
-    # Rotate pcl by bbox heading angle
+    # Rotate points by bbox heading angle
     ang = np.radians(bbox.box.heading)
     r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
     r_pcl = np.matmul(pcl[:, 0:2], r_mat)
-    r_pcl = np.append(r_pcl, np.expand_dims(pcl[:, 2], 1), axis=1)
+
+    # Add back in z and intensity data
+    r_pcl = np.append(r_pcl, pcl[:, 2:], axis=1)
 
     # Sub-select pcl by bbox limits
     indxs = np.where(
@@ -88,7 +90,7 @@ class DatasetCreator(object):
             else self.logger.setLevel(logging.INFO)
 
     def filterPcl(self, pcl):
-        """Downsample and remove groundplane from pcl."""
+        """Remove groundplane from pcl."""
         self.logger.info('Entr:filterPcl')
         pcl_out = remove_groundplane(np.array([list(pt) for pt in pcl]))
         self.logger.debug('Show:pts_removed=%i' % (len(pcl) - len(pcl_out)))
@@ -99,13 +101,14 @@ class DatasetCreator(object):
         """Extract points from pcl within bboxes as clusters.
 
         Args:
-            pcl: (n * 3) numpy array of xyz points
+            pcl: (n * 4) numpy array of xyz points and intensities
             bboxes: waymo pcl label output
             thresh: min int point num for cluster
 
-        Returns: list of (n * 3) numpy arrays of xyz points
-
+        Returns:
+            obj_pcls: list of (n * 4) numpy arrays of xyz points and intensities
         """
+
         self.logger.info('Entr:clusterByBBox')
         obj_pcls = {}  # Hash map of bbox label : pcl
         self.logger.info("Show:bbox_count: %i" % len(bboxes))
@@ -132,10 +135,10 @@ class DatasetCreator(object):
         return obj_pcls
 
     def computeClusterMetadata(self, cluster, bbox):
-        """Compute key information from cluster to boil down pointcloud infoself.
+        """Compute key information from cluster to boil down pointcloud info.
 
         Args:
-            cluster: list of xyz points within cluster
+            cluster: list of xyz points and intensities within cluster
             bbox: waymo object label output
 
         Returns:

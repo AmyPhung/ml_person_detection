@@ -14,7 +14,15 @@ GROUND_THRESHOLD = 1  # meters
 MAX_CLUSTER_PTS = 200 # max number of points in a cluster
 
 def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
-    """Remove points below z-threshold and return pcl."""
+    """Remove points below z-threshold and return pcl.
+
+    Args:
+        pcl: (n * 4) numpy array of xyz points and intensities
+
+    Returns:
+        pcl_out: (n * 4) numpy array of xyz points and intensities without
+            points below a certain z value
+    """
     return pcl[pcl[:,2] > z_thresh]
 
 def extract_cluster_parameters(cluster, display=False):
@@ -22,7 +30,7 @@ def extract_cluster_parameters(cluster, display=False):
     containing all features.
 
     Args:
-        cluster: ndarray (n * 3) of cluster points.
+        cluster: ndarray (n * 4) of cluster points and intensities.
 
     Returns:
         parameters: list of parameters [e_x, e_y, e_z, vol, density]
@@ -31,14 +39,17 @@ def extract_cluster_parameters(cluster, display=False):
             e_z = eigenvalue along z axis
             vol = volume of bounding box
             density = point density of cluster (num pts / volume)
+            max_intensity = maximum intensity in cluster
+            mean_intensity = average intensity in cluster
+            var_intensity = variance of intensity in cluster
     """
     # Downsample to smaller number of points - objects close to lidar contain
     # significantly more points than ones further away
     if cluster.shape[0] > MAX_CLUSTER_PTS:
         cluster = resample(cluster, MAX_CLUSTER_PTS, t=None, axis=0, window=None)
 
-    # Compute eigenvalues along all three axes
-    xyz_cov = np.cov(np.transpose(cluster))
+    # Compute eigenvalues along all xyz axes
+    xyz_cov = np.cov(np.transpose(cluster[:,:3]))
     e_x, e_y, e_z = np.linalg.eigvals(xyz_cov)
 
     # Compute volume and point density
@@ -46,9 +57,12 @@ def extract_cluster_parameters(cluster, display=False):
     density = cluster.shape[0]/vol
 
     # Compute maximum and mean object intensity
-    # TODO
+    max_intensity = np.max(cluster[:,3])
+    mean_intensity = np.mean(cluster[:,3])
+    var_intensity = np.var(cluster[:,3])
 
-    output = [e_x, e_y, e_z, vol, density]
+    output = [e_x, e_y, e_z, vol, density,
+              max_intensity, mean_intensity, var_intensity]
     return output
 
 def compute_volume(points, display=False):
@@ -88,13 +102,19 @@ class Features(object):
             e_z = eigenvalue along z axis
             vol = volume of bounding box
             density = point density of cluster (num pts / volume)
-
+            max_intensity = maximum intensity in cluster
+            mean_intensity = average intensity in cluster
+            var_intensity = variance of intensity in cluster
     """
-    def __init__(self, cluster_id=None, cls=None, cnt=None, e_x=0, e_y=0, e_z=0, vol=0, density=0):
+    def __init__(self, cluster_id=None, cls=None, cnt=None,
+                 e_x=0, e_y=0, e_z=0, vol=0, density=0,
+                 max_intensity=0, mean_intensity=0, var_intensity=0):
+
         self.cluster_id = cluster_id
         self.cls = cls
         self.cnt = cnt
-        self.parameters = [e_x, e_y, e_z, vol, density]
+        self.parameters = [e_x, e_y, e_z, vol, density,
+                           max_intensity, mean_intensity, var_intensity]
 
     def __str__(self):
         return "Cluster ID: "                + str(self.cluster_id)    + "\n" \
@@ -105,4 +125,7 @@ class Features(object):
                "    Eigenvalue Y: "          + str(self.parameters[1]) + "\n" \
                "    Eigenvalue Z: "          + str(self.parameters[2]) + "\n" \
                "    Bounding box volume: "   + str(self.parameters[3]) + "\n" \
-               "    Cluster point density: " + str(self.parameters[4]) + "\n"
+               "    Cluster point density: " + str(self.parameters[4]) + "\n" \
+               "    Max Intensity: "         + str(self.parameters[5]) + "\n" \
+               "    Average Intensity: "     + str(self.parameters[6]) + "\n" \
+               "    Intensity Variance: "    + str(self.parameters[7]) + "\n"
