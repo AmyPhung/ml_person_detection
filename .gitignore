@@ -1,5 +1,5 @@
 *.swp
 *.swo
 *.pyc
-/scripts/data/train/*.json
+/data/*
 /logs/*.log

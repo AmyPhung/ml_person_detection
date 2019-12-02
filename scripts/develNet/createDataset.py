@@ -1,102 +1,52 @@
-#!usr/bin/env python
+#!/usr/bin/env python
 import sys # Needed for relative imports
 sys.path.append('../') # Needed for relative imports
 
 import datetime
+import glob
 import json
 import logging
 import os.path
-import rospy
+import rospy as rp
 
 import numpy as np
 import tensorflow as tf
 
 from collections import namedtuple
 from modules.helperFunctions import *
-from modules.waymo2ros import Waymo2Numpy
+from modules.waymo2ros import Waymo2Numpy, Waymo2Ros
+from sensor_msgs.msg import PointCloud2
+from visualization_msgs.msg import MarkerArray
 
 
 XYPair = namedtuple('XYPair', 'x y')
 XYZPair = namedtuple('XYZPair', 'x y z')
 
 
-def is_between_lines(l1, l2, p):
-    """Return true if point is between parallel lines.
 
-    Args:
-        l1: function that returns y for any x
-        l2: function that returns y for any x
-        p: some obj with x and y attr
+def get_pts_in_bbox(pcl, bbox, logger=None):
+    """Return ndarray of points from pcl within bbox."""
+    # Get bbox limits in bbox coord frame
+    x_lo = bbox.box.center_x - bbox.box.length/2
+    x_hi = bbox.box.center_x + bbox.box.length/2
+    y_lo = bbox.box.center_y - bbox.box.width/2
+    y_hi = bbox.box.center_y + bbox.box.width/2
+    if logger is not None:
+        logger.debug('bbox limits: %0.2f-%0.2f, %0.2f-%0.2f'
+            % (x_lo, x_hi, y_lo, y_hi))
 
-    Returns:
-        bool if point between parallel lines.
+    # Rotate pcl by bbox heading angle
+    ang = np.radians(bbox.box.heading)
+    r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
+    r_pcl = np.matmul(pcl[:, 0:2], r_mat)
+    r_pcl = np.append(r_pcl, np.expand_dims(pcl[:, 2], 1), axis=1)
 
-    """
-    if not abs(round(l1(-2) - l1(2), 3)) \
-            == abs(round(l2(-2) - l2(2), 3)):
-        raise ValueError('lines are not parallel!')
-
-    y0, y1, y2 = p.y, l1(p.x), l2(p.x)
-    # If line 1 is above line 2
-    if y1 > y2:
-        return True if y2 < y0 < y1 else False
-    else:
-        return True if y1 < y0 < y2 else False
-
-
-def is_in_bbox(point, label, logger=None):
-    """Return True if point within bbox in xy-plane.
-
-    Args:
-        point: obj representing point to check, has x & y attr
-        bbox: laser scan thing from waymo?
-        logger: python logging object
-
-    Returns:
-        bool True if point in box else False
-    """
-
-    # Simplify variables for some marker attributes
-    angle = label.box.heading
-    cntr = XYZPair(
-        label.box.center_x, label.box.center_y, label.box.center_z)
-
-    # Calculate offsets in xy-coordinates for each side
-    l = XYPair(
-        0.5 * label.box.length * np.cos(np.radians(angle)),
-        0.5 * label.box.length * np.sin(np.radians(angle)))
-    w = XYPair(
-        0.5 * label.box.width * np.cos(np.radians(90 + angle)),
-        0.5 * label.box.width * np.sin(np.radians(90 + angle)))
-
-    # Calculate corner points
-    p1 = XYPair(cntr.x + l.x + w.x, cntr.y + l.y + w.y)
-    p2 = XYPair(cntr.x - l.x - w.x, cntr.y - l.y - w.y)
-    p3 = XYPair(cntr.x + l.x - w.x, cntr.y + l.y - w.y)
-    p4 = XYPair(cntr.x - l.x + w.x, cntr.y - l.y + w.y)
-
-    # Create functions for lines representing bbox sides
-    def w1(x):
-        return ((p4.y - p2.y) / (p4.x - p2.x)) * (x - p4.x) + p4.y
-
-    def w2(x):
-        return ((p3.y - p1.y) / (p3.x - p1.x)) * (x - p3.x) + p3.y
-
-    def l1(x):
-        return ((p2.y - p3.y) / (p2.x - p3.x)) * (x - p2.x) + p2.y
-
-    def l2(x):
-        return ((p1.y - p4.y) / (p1.x - p4.x)) * (x - p1.x) + p1.y
-
-    # Check that point is between both sets of parallel lines
-    try:
-        return True if is_between_lines(w1, w2, point) \
-            and is_between_lines(l1, l2, point) else False
-    except ValueError as e:
-        if logger is not None:
-            logger.debug('Warn:non-parallel_lines=True')
-            # TODO show points making lines as debug
-            raise
+    # Sub-select pcl by bbox limits
+    indxs = np.where(
+        (x_lo < r_pcl[:, 0]) & (r_pcl[:, 0] < x_hi)
+        & (y_lo < r_pcl[:, 1]) & (r_pcl[:, 1] < y_hi))[0]
+    pcl_out = r_pcl[indxs]
+    return pcl_out
 
 
 class DatasetCreator(object):
@@ -109,11 +59,11 @@ class DatasetCreator(object):
 
     """
 
-    def __init__(self, data_dir, data_file, logger=None, log_dir=None, verbosity=None):
+    def __init__(self, dir_load, dir_save, logger=None, dir_log=None, verbosity=None):
         """Provide directory location to find frames."""
         self.waymo_converter = Waymo2Numpy()
-        self.data_dir = data_dir
-        self.data_file = data_file
+        self.dir_load = dir_load
+        self.dir_save = dir_save
 
         # Set up logger if not given as arg
         if logger is not None:
@@ -122,7 +72,7 @@ class DatasetCreator(object):
             # Generate log file name
             d = datetime.datetime.now()
             filename = ('%s/%i-%i-%i-%i-%i.log'
-                        % (log_dir, d.year, d.month, d.day, d.hour, d.minute))
+                        % (dir_log, d.year, d.month, d.day, d.hour, d.minute))
 
             # Create logger with file and stream handlers
             self.logger = logging.getLogger('datasetCreator')
@@ -139,13 +89,15 @@ class DatasetCreator(object):
 
         self.logger.setLevel(verbosity) if verbosity is not None \
             else self.logger.setLevel(logging.INFO)
+        self.logger.info('Logging set up for createDataset object')
+        self.logger.debug('Exit:__init__')
 
     def filterPcl(self, pcl):
         """Downsample and remove groundplane from pcl."""
-        self.logger.info('Entr:filterPcl')
+        self.logger.debug('Entr:filterPcl')
         pcl_out = remove_groundplane(np.array([list(pt) for pt in pcl]))
         self.logger.debug('Show:pts_removed=%i' % (len(pcl) - len(pcl_out)))
-        self.logger.info('Exit:filterPcl')
+        self.logger.debug('Exit:filterPcl')
         return pcl_out
 
     def clusterByBBox(self, pcl, bboxes, thresh=25):
@@ -159,44 +111,34 @@ class DatasetCreator(object):
         Returns: list of (n * 3) numpy arrays of xyz points
 
         """
-        self.logger.info('Entr:clusterByBBox')
+        self.logger.debug('Entr:clusterByBBox')
         obj_pcls = {}  # Hash map of bbox label : pcl
+        self.logger.info("bbox initial count: %i" % len(bboxes))
 
-        # Convert from list of tuples to list of XYPairs
-        pcl = [XYZPair(pt[0], pt[1], pt[2]) for pt in pcl]
-        self.logger.info("Show:bbox_count: %i" % len(bboxes))
+        for i, label in enumerate(bboxes):
 
-        for i, bbox in enumerate(bboxes):
-
-            # Add pts in bounding box to cluster and remove from pcl
-            try:
-                cluster = [pt for pt in pcl if is_in_bbox(pt, bbox, self.logger)]
-            except ValueError as e:
-                self.logger.warning('Unable to use bbox due to non-parallel error')
-                continue
-
-            pcl = [pt for pt in pcl if pt not in cluster]
-            self.logger.info(
-                "Show:bbox=%i|%i, class=%i, id=%s, pt_count=%i"
-                % (i, len(bboxes), bbox.type, bbox.id, len(cluster)))
-            self.logger.debug("Show:pcl_len=%i" % len(pcl))
+            cluster = get_pts_in_bbox(pcl, label, self.logger)
+            self.logger.debug(
+                "bbox=%i * %i, class=%i, id=%s, pt_count=%i"
+                % (i, len(bboxes), label.type, label.id, len(cluster)))
 
             # Threshold cluster size
             if len(cluster) >= thresh:
-                obj_pcls[bbox.id] = cluster
+                obj_pcls[label.id] = cluster
             else:
-                obj_pcls[bbox.id] = None
-                self.logger.info(
-                    "Note:cluster_size=%i < threshold=%i"\
+                obj_pcls[label.id] = None
+                self.logger.warning(
+                    "cluster_size=%i under threshold=%i"\
                     % (len(cluster), thresh))
 
             #if i == 5: break  # Uncomment to use subset of bboxes for debug
 
-        self.logger.info('Exit:clusterByBBox')
+        self.logger.debug('Exit:clusterByBBox')
+        self.logger.info("bbox final count: %i" % len([o for o in obj_pcls if o is not None]))
         return obj_pcls
 
     def computeClusterMetadata(self, cluster, bbox):
-        """Compute key information from cluster to boil down pointcloud infoself.
+        """Compute key information from cluster to boil down pointcloud info.
 
         Args:
             cluster: list of xyz points within cluster
@@ -206,14 +148,20 @@ class DatasetCreator(object):
             features: Features object containing cluster features
         """
 
-        self.logger.info('Entr:computeClusterMetadata')
+        self.logger.debug('Entr:computeClusterMetadata')
         if cluster is None:
             raise TypeError(
                 'None passed as cluster - ' \
                 + 'possibly a too-small cluster passed from clusterByBBox?')
         np_cluster = np.array(cluster)
-        features = extract_cluster_features(np_cluster, bbox)
-        self.logger.info('Exit:computeClusterMetadata')
+
+        features = Features()
+        features.cluster_id = bbox.id
+        features.cls = bbox.type
+        features.cnt = cluster.shape[0]
+        features.parameters = extract_cluster_parameters(np_cluster, display=False)
+
+        self.logger.debug('Exit:computeClusterMetadata')
         return features
 
     def saveClusterMetadata(self, metadata, name):
@@ -225,15 +173,15 @@ class DatasetCreator(object):
                 each cluster in frame
             name: name of frame
         """
-        self.logger.info('Entr:saveClusterMetadata')
-        filename = '%s/%s.json' % (self.data_dir, str(name))
-        self.logger.info('Show:save_loc=%s' % filename)
+        self.logger.debug('Entr:saveClusterMetadata')
+        filename = '%s/%s.json' % (self.dir_save, str(name))
+        self.logger.info('save_loc=%s' % filename)
 
         # lambda function is used to serialize custom Features object
         with open(filename, 'w') as outfile:
             json.dump(metadata, outfile, default=lambda o: o.__dict__, indent=4)
 
-        self.logger.info('Exit:saveClusterMetadata')
+        self.logger.debug('Exit:saveClusterMetadata')
 
     def parseFrame(self, frame):
         """Extract and save data from a single given frame.
@@ -242,14 +190,14 @@ class DatasetCreator(object):
             frame: waymo open dataset Frame with loaded data
 
         """
-        self.logger.info('Entr:parseFrame')
+        self.logger.debug('Entr:parseFrame')
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
         pcl = self.filterPcl(pcl)
         clusters = self.clusterByBBox(pcl, bboxes)
         metadata = [self.computeClusterMetadata(c, bboxes[i])
             for i, c in enumerate(clusters.values()) if c is not None]
         self.saveClusterMetadata(metadata, frame.context.name)
-        self.logger.info('Exit:parseFrame')
+        self.logger.debug('Exit:parseFrame')
         return
 
     def checkDataFile(self, frame):
@@ -260,76 +208,137 @@ class DatasetCreator(object):
                 create filename for which to check
 
         """
-        self.logger.info('Entr:checkDataFile')
-        file = '%s/%s.json' % (self.data_dir, frame.context.name)
+        self.logger.debug('Entr:checkDataFile')
+        file = '%s/%s.json' % (self.dir_save, frame.context.name)
         self.logger.debug('Show:frame_file=%s' % file)
-        self.logger.info('Exit:checkDataFile')
+        self.logger.debug('Exit:checkDataFile')
         return os.path.isfile(file)
 
-    def run(self, overwrite=False):
+    def run(self, data_file, overwrite=False):
         """Generate data for all scans in all .tfrecord files in dir.
 
         Args:
+            data_file: str .tfrecord file to parse
             overwrite: Bool for overwriting already existing data
 
         Todo:
             put glob + directory stuff here
 
         """
-        self.logger.info('Entr:run')
+        self.logger.debug('Entr:run')
         #'frames'
-        tfrecord = tf.data.TFRecordDataset(
-            '%s/%s' % (self.data_dir, self.data_file), compression_type='')
+        tfrecord = tf.data.TFRecordDataset(data_file, compression_type='')
         for i, scan in enumerate(tfrecord):
             frame = self.waymo_converter.create_frame(scan)
             frame.context.name = '%s-%i' % (frame.context.name, i)
             if self.checkDataFile(frame) and not overwrite:
-                self.logger.info('Show:framedata_exists=True')
-                continue
-            self.logger.info(
-                'Show:frame_num=%i, frame_id=%s' \
-                % (i, str(frame.context.name)))
-            self.parseFrame(frame)
+                self.logger.info(
+                    'frame %s is already parsed.' % str(frame.context.name))
+            else:
+                self.logger.info(
+                    'frame_num=%i, frame_id=%s' \
+                    % (i, str(frame.context.name)))
+                self.parseFrame(frame)
 
-        self.logger.info('Exit:run')
+        self.logger.debug('Exit:run')
         return
 
 
 class DatasetCreatorVis(DatasetCreator):
     """Class for visualizing DatasetCreator tasks with rviz."""
 
-    def __init__(self):
+    def __init__(
+            self, dir_load, dir_save, logger=None, dir_log=None,
+            verbosity=None, visualize=0):
+        """Initialize Ros components, DatasetCreator, visualize setting."""
 
-        rp.init_node('dataset_creator_vis')
-        super(DatasetCreator, self).__init__()
-        pass
+        self.visualize = visualize
+        self.ros_converter = Waymo2Ros()
+        rp.init_node('dataset_creator_vis', disable_signals=True)
+        self.marker_pub = rp.Publisher('/bboxes', MarkerArray, queue_size=1)
+        self.pcl_pub = rp.Publisher('/pcl', PointCloud2, queue_size=1)
+        DatasetCreator.__init__(
+            self, dir_load=dir_load, dir_save=dir_save, logger=logger,
+            dir_log=dir_log, verbosity=verbosity)
+        self.logger.debug('Exit:__init__')
 
-    def parseFrame(self):
-        """Overwrite CreateDataset run function, insert viz."""
+    def parseFrame(self, frame):
+        """Extract and save data from a single given frame, viz if specified.
 
-        # load frame (from file)
-        # publish to ros
-        # publsih markers and such to ros
-        # filter frame
-        # cluster
-        # compute
-        # save
-        pass
+        If self.visualize is 1, shows original data.
+        If self.visualize is 2, shows clustered data.
+        
+        Args:
+            frame: waymo open dataset Frame with loaded data
+
+        """
+        self.logger.debug('Entr:parseFrame')
+        pcl, bboxes = self.waymo_converter.unpack_frame(frame)
+        if self.visualize == 1:
+            self.pcl_pub.publish(
+                self.ros_converter.convert2pcl(pcl))
+            self.marker_pub.publish(
+                self.ros_converter.convert2markerarray(bboxes))
+
+        pcl = self.filterPcl(pcl)
+        clusters = self.clusterByBBox(pcl, bboxes)
+        if self.visualize == 2:
+            #try:
+            good_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
+            self.pcl_pub.publish(self.ros_converter.convert2pcl(
+                np.concatenate(good_clusters.values())))
+            self.marker_pub.publish(self.ros_converter.convert2markerarray(
+                [b for b in bboxes if str(b.id) in good_clusters.keys()]))
+            #except:
+                #self.logger.warning("No pcl with count > 25 pts")
+
+        metadata = [self.computeClusterMetadata(c, bboxes[i])
+            for i, c in enumerate(clusters.values()) if c is not None]
+        self.saveClusterMetadata(metadata, frame.context.name)
+        self.logger.debug('Exit:parseFrame')
+        return
+
 
 if __name__ == "__main__":
+    """Set up directory locations and create dataset."""
+
+    enable_rviz = rp.get_param("/enable_rviz", False)
+
     user = 'cnovak'
-    home_dir = '/home/%s' % user
-    catkin_ws = 'catkin_ws/src/ml_person-detection'
+    loc_pkg = '/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection'
+    dataset = 'training_0001'
 
-    visualize = False
-    data_dir = '%s/Data/waymo-od/' % home_dir
-    #data_dir = '/home/amy/test_ws/src/waymo-od/tutorial/'
-    data_file = 'segment-15578655130939579324_620_000_640_000' \
-         + '_with_camera_labels.tfrecord'
-    log_dir = '%s/Workspaces/%s/logs' % (home_dir, catkin_ws)
+    args_default = {
+        'dir_load' : '/home/%s/Data/waymo-od/%s' % (user, dataset),
+        'dir_log' : '%s/logs' % loc_pkg,
+        'dir_save' : '%s/data/%s' % (loc_pkg, dataset),
+        'verbosity' : logging.DEBUG,
+        'visualize' : 2
+    }
+    print(args_default)
 
-    creator = DatasetCreatorVis() if visualize \
-        else DatasetCreator(
-            data_dir=data_dir, data_file=data_file,
-            log_dir=log_dir, verbosity=logging.DEBUG)
-    creator.run()  # TODO Setup directory choosing
+    if enable_rviz:
+        dir_load = rp.get_param("/dir_load", args_default['dir_load'])
+        dir_log = rp.get_param("/dir_log", args_default['dir_log'])
+        dir_save = rp.get_param("/dir_save", args_default['dir_save'])
+        verbosity = int(rp.get_param("/verbosity", args_default['verbosity']))
+        visualize = int(rp.get_param("/visualize", args_default['visualize']))
+
+        creator = DatasetCreatorVis(
+            dir_load=dir_load, dir_save=dir_save, dir_log=dir_log,
+            verbosity=verbosity, visualize=visualize)
+
+    else: 
+        dir_load = args_default['dir_load']
+        dir_log = args_default['dir_log']
+        dir_save = args_default['dir_save']
+        verbosity = args_default['verbosity']
+        visualize = args_default['visualize']
+
+        creator = DatasetCreator(
+            dir_load=dir_load, dir_save=dir_save, dir_log=dir_log,
+            verbosity=verbosity)
+    
+    creator.logger.info("enable_rviz = %s" % enable_rviz)
+    for f in glob.glob('%s/*.tfrecord' % dir_load):
+        creator.run(f)

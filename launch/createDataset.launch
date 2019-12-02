@@ -1,0 +1,12 @@
+<launch>
+
+  <!-- Show in Rviz   -->
+  <node name="rviz" pkg="rviz" type="rviz" 
+    args="-d $(find ml_person_detection)/rviz/createDataset.rviz"/>
+
+  <param name="/enable_rviz" type="bool" value="True" />
+  <node name="createDataset" pkg="ml_person_detection"
+    type="createDataset.py" output="screen"/>
+
+</launch>
+
