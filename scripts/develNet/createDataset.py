@@ -96,7 +96,7 @@ class DatasetCreator(object):
 
     def filterPcl(self, pcl):
         """Remove groundplane from pcl."""
-        self.logger.info('Entr:filterPcl')
+        self.logger.debug('Entr:filterPcl')
 
         pcl_out = remove_groundplane(np.array([list(pt) for pt in pcl]))
         self.logger.debug('Show:pts_removed=%i' % (len(pcl) - len(pcl_out)))
