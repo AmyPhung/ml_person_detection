@@ -221,7 +221,7 @@ class DatasetCreator(object):
         self.logger.debug('Exit:checkDataFile')
         return os.path.isfile(file)
 
-    def run(self, data_file, overwrite=False):
+    def run(self, data_file, file_number='', overwrite=False):
         """Generate data for all scans in all .tfrecord files in dir.
 
         Args:
@@ -245,8 +245,8 @@ class DatasetCreator(object):
             if percent % 10 == 0 and percent not in progress:
                 progress.append(percent)
                 self.logger.info(
-                    'STATUS UPDATE: tfrecord parse is %i%% percent complete.'
-                    % percent)
+                    'STATUS UPDATE: tfrecord %s parse is %i%% percent complete.'
+                    % (file_number, percent))
 
             frame = self.waymo_converter.create_frame(scan)
             frame.context.name = '%s-%i' % (frame.context.name, i)
@@ -385,4 +385,4 @@ if __name__ == "__main__":
             'STATUS UPDATE: dataset parse is %i%% percent complete.'
             % int(100 * i / tfrecord_len))
 
-        creator.run(f)
+        creator.run(f, i)
