@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import sys # Needed for relative imports
 sys.path.append('../') # Needed for relative imports
 
@@ -35,11 +36,13 @@ def get_pts_in_bbox(pcl, bbox, logger=None):
         logger.debug('bbox limits: %0.2f-%0.2f, %0.2f-%0.2f'
             % (x_lo, x_hi, y_lo, y_hi))
 
-    # Rotate pcl by bbox heading angle
+    # Rotate points by bbox heading angle
     ang = np.radians(bbox.box.heading)
     r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
     r_pcl = np.matmul(pcl[:, 0:2], r_mat)
-    r_pcl = np.append(r_pcl, np.expand_dims(pcl[:, 2], 1), axis=1)
+
+    # Add back in z and intensity data
+    r_pcl = np.append(r_pcl, pcl[:, 2:], axis=1)
 
     # Sub-select pcl by bbox limits
     indxs = np.where(
@@ -83,18 +86,20 @@ class DatasetCreator(object):
             formatter = logging.Formatter(
                 '%(asctime)s %(levelname)s %(message)s')
             fh.setFormatter(formatter)
+            fh.setLevel(logging.DEBUG)
             sh.setFormatter(formatter)
+            sh.setLevel(logging.INFO)
             self.logger.addHandler(fh)
             self.logger.addHandler(sh)
+            self.logger.setLevel(logging.DEBUG)
 
-        self.logger.setLevel(verbosity) if verbosity is not None \
-            else self.logger.setLevel(logging.INFO)
         self.logger.info('Logging set up for createDataset object')
         self.logger.debug('Exit:__init__')
 
     def filterPcl(self, pcl):
-        """Downsample and remove groundplane from pcl."""
+        """Remove groundplane from pcl."""
         self.logger.debug('Entr:filterPcl')
+
         pcl_out = remove_groundplane(np.array([list(pt) for pt in pcl]))
         self.logger.debug('Show:pts_removed=%i' % (len(pcl) - len(pcl_out)))
         self.logger.debug('Exit:filterPcl')
@@ -104,16 +109,18 @@ class DatasetCreator(object):
         """Extract points from pcl within bboxes as clusters.
 
         Args:
-            pcl: (n * 3) numpy array of xyz points
+            pcl: (n * 4) numpy array of xyz points and intensities
             bboxes: waymo pcl label output
             thresh: min int point num for cluster
 
-        Returns: list of (n * 3) numpy arrays of xyz points
-
+        Returns:
+            obj_pcls: list of (n * 4) numpy arrays of xyz points and intensities
         """
+        
         self.logger.debug('Entr:clusterByBBox')
+
         obj_pcls = {}  # Hash map of bbox label : pcl
-        self.logger.info("bbox initial count: %i" % len(bboxes))
+        self.logger.debug("bbox initial count: %i" % len(bboxes))
 
         for i, label in enumerate(bboxes):
 
@@ -127,21 +134,21 @@ class DatasetCreator(object):
                 obj_pcls[label.id] = cluster
             else:
                 obj_pcls[label.id] = None
-                self.logger.warning(
+                self.logger.debug(
                     "cluster_size=%i under threshold=%i"\
                     % (len(cluster), thresh))
 
             #if i == 5: break  # Uncomment to use subset of bboxes for debug
 
         self.logger.debug('Exit:clusterByBBox')
-        self.logger.info("bbox final count: %i" % len([o for o in obj_pcls if o is not None]))
+        self.logger.debug("bbox final count: %i" % len([o for o in obj_pcls if o is not None]))
         return obj_pcls
 
     def computeClusterMetadata(self, cluster, bbox):
         """Compute key information from cluster to boil down pointcloud info.
 
         Args:
-            cluster: list of xyz points within cluster
+            cluster: list of xyz points and intensities within cluster
             bbox: waymo object label output
 
         Returns:
@@ -175,7 +182,7 @@ class DatasetCreator(object):
         """
         self.logger.debug('Entr:saveClusterMetadata')
         filename = '%s/%s.json' % (self.dir_save, str(name))
-        self.logger.info('save_loc=%s' % filename)
+        self.logger.debug('save_loc=%s' % filename)
 
         # lambda function is used to serialize custom Features object
         with open(filename, 'w') as outfile:
@@ -226,11 +233,25 @@ class DatasetCreator(object):
 
         """
         self.logger.debug('Entr:run')
-        #'frames'
         tfrecord = tf.data.TFRecordDataset(data_file, compression_type='')
+        record_len = sum(1 for _ in tf.python_io.tf_record_iterator(data_file))
+        self.logger.debug('tfrecord has len %s' % record_len)
+
+        progress = []  # Store progress shown to avoid rounding duplicates
         for i, scan in enumerate(tfrecord):
+
+            # Print percent complete
+            percent = int(100 * i / record_len)
+            if percent % 10 == 0 and percent not in progress:
+                progress.append(percent)
+                self.logger.info(
+                    'STATUS UPDATE: tfrecord parse is %i%% percent complete.'
+                    % percent)
+
             frame = self.waymo_converter.create_frame(scan)
             frame.context.name = '%s-%i' % (frame.context.name, i)
+
+            # Parse frame if relevant json file doesn't already exist
             if self.checkDataFile(frame) and not overwrite:
                 self.logger.info(
                     'frame %s is already parsed.' % str(frame.context.name))
@@ -240,6 +261,8 @@ class DatasetCreator(object):
                     % (i, str(frame.context.name)))
                 self.parseFrame(frame)
 
+        self.logger.info(
+            'STATUS UPDATE: tfrecord parse is 100% percent complete.')
         self.logger.debug('Exit:run')
         return
 
@@ -266,7 +289,8 @@ class DatasetCreatorVis(DatasetCreator):
         """Extract and save data from a single given frame, viz if specified.
 
         If self.visualize is 1, shows original data.
-        If self.visualize is 2, shows clustered data.
+        If self.visualize is 2, shows filtered data.
+        If self.visualize is 3, shows clustered data.
         
         Args:
             frame: waymo open dataset Frame with loaded data
@@ -274,6 +298,9 @@ class DatasetCreatorVis(DatasetCreator):
         """
         self.logger.debug('Entr:parseFrame')
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
+        # Update visualize param
+        self.visualize = int(rp.get_param("/visualize", self.visualize)) 
+
         if self.visualize == 1:
             self.pcl_pub.publish(
                 self.ros_converter.convert2pcl(pcl))
@@ -281,16 +308,23 @@ class DatasetCreatorVis(DatasetCreator):
                 self.ros_converter.convert2markerarray(bboxes))
 
         pcl = self.filterPcl(pcl)
-        clusters = self.clusterByBBox(pcl, bboxes)
+
         if self.visualize == 2:
-            #try:
-            good_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
-            self.pcl_pub.publish(self.ros_converter.convert2pcl(
-                np.concatenate(good_clusters.values())))
-            self.marker_pub.publish(self.ros_converter.convert2markerarray(
-                [b for b in bboxes if str(b.id) in good_clusters.keys()]))
-            #except:
-                #self.logger.warning("No pcl with count > 25 pts")
+            self.pcl_pub.publish(
+                self.ros_converter.convert2pcl(pcl))
+            self.marker_pub.publish(
+                self.ros_converter.convert2markerarray(bboxes))
+
+        clusters = self.clusterByBBox(pcl, bboxes)
+        if self.visualize == 3:
+            try:
+                good_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
+                self.pcl_pub.publish(self.ros_converter.convert2pcl(
+                    np.concatenate(good_clusters.values())))
+                self.marker_pub.publish(self.ros_converter.convert2markerarray(
+                    [b for b in bboxes if str(b.id) in good_clusters.keys()]))
+            except:
+                self.logger.warning("No pcl with count > 25 pts")
 
         metadata = [self.computeClusterMetadata(c, bboxes[i])
             for i, c in enumerate(clusters.values()) if c is not None]
@@ -306,14 +340,14 @@ if __name__ == "__main__":
 
     user = 'cnovak'
     loc_pkg = '/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection'
-    dataset = 'training_0001'
+    dataset = 'training_0000'
 
     args_default = {
         'dir_load' : '/home/%s/Data/waymo-od/%s' % (user, dataset),
         'dir_log' : '%s/logs' % loc_pkg,
         'dir_save' : '%s/data/%s' % (loc_pkg, dataset),
         'verbosity' : logging.DEBUG,
-        'visualize' : 2
+        'visualize' : 1
     }
     print(args_default)
 
@@ -340,5 +374,15 @@ if __name__ == "__main__":
             verbosity=verbosity)
     
     creator.logger.info("enable_rviz = %s" % enable_rviz)
-    for f in glob.glob('%s/*.tfrecord' % dir_load):
+    file_list = glob.glob('%s/*.tfrecord' % dir_load)
+    tfrecord_len = sum(1 for _ in file_list)
+    creator.logger.info('Found %i tfrecord files' % tfrecord_len)
+
+    for i, f in enumerate(file_list):
+
+        # Print percent complete
+        creator.logger.info(
+            'STATUS UPDATE: dataset parse is %i%% percent complete.'
+            % int(100 * i / tfrecord_len))
+
         creator.run(f)

@@ -66,8 +66,8 @@ class Waymo2Numpy(object):
         return frame
 
     def unpack_frame(self, frame):
-        """Get pcl and labels from frame."""
-        return self.frame2points(frame), self.frame2labels(frame)
+        """Get pcl, intensities, and labels from frame."""
+        return self.frame2pcl(frame), self.frame2labels(frame)
 
     def frame2labels(self, frame):
         """Extract laser labels from waymo data frame."""
@@ -80,22 +80,40 @@ class Waymo2Numpy(object):
             frame: waymo data frame
 
         Returns:
-            numpy array (x * 3) of xyz points
-
+            points: numpy (n * 3) array of xyz points
         """
         frame.lasers.sort(key=lambda laser: laser.name)
 
         (range_images, camera_projections, range_image_top_pose) = \
             frame_utils.parse_range_image_and_camera_projection(frame)
 
-        points, __ = frame_utils.convert_range_image_to_point_cloud(
+        pcl = convert_range_image_to_pcl(
             frame,
             range_images,
             camera_projections,
             range_image_top_pose)
+        return pcl[:,:3] # Only return first three columns for xyz data
 
-        return np.concatenate(points, axis=0)
+    def frame2pcl(self, frame):
+        """Extract points and intensities from waymo frame.
 
+        Args:
+            frame: waymo data frame
+
+        Returns:
+            pcl: numpy (n * 4) array of xyz points and intensities
+        """
+        frame.lasers.sort(key=lambda laser: laser.name)
+
+        (range_images, camera_projections, range_image_top_pose) = \
+            frame_utils.parse_range_image_and_camera_projection(frame)
+
+        pcl = convert_range_image_to_pcl(
+            frame,
+            range_images,
+            camera_projections,
+            range_image_top_pose)
+        return pcl
 
 class Waymo2Ros(Waymo2Numpy):
     """Converter class for translating Waymo frame data to Ros msgs."""
@@ -108,7 +126,8 @@ class Waymo2Ros(Waymo2Numpy):
         """Convert list of points into ros PointCloud2 msg.
 
         Args:
-            points: numpy (x * 3) array of xyz points
+            points: numpy (x * 3) array of xyz points or numpy (n * 4) array of
+                xyz points and intensities
             frame_id: str of ros tf frame to attach to pcl
 
         Returns:
@@ -135,7 +154,7 @@ class Waymo2Ros(Waymo2Numpy):
             frame_id: str of ros tf frame to attach to pcl
 
         Returns:
-            Ros MarkerArray msg with each label as a Marker of type CUBE
+            ROS MarkerArray msg with each label as a Marker of type CUBE
 
         Todo:
             Tag with type, rather than id
@@ -195,6 +214,95 @@ class Waymo2RosViz(Waymo2Ros):
 
         bbox_msg = self.convert2markerarray(frame.laser_labels)
         self.box_pub.publish(bbox_msg)
+
+
+
+def convert_range_image_to_pcl(frame,
+                               range_images,
+                               camera_projections,
+                               range_image_top_pose,
+                               ri_index=0):
+
+    """Convert range images to point cloud with point intensity info
+    Based on frame_utils.convert_range_image_to_point_cloud
+
+    Args:
+        frame: open dataset frame
+        range_images: A dict of {laser_name, [range_image_first_return,
+                                 range_image_second_return]}.
+        camera_projections: A dict of {laser_name,
+                                       [camera_projection_from_first_return,
+                                       camera_projection_from_second_return]}.
+       range_image_top_pose: range image pixel pose for top lidar.
+       ri_index: 0 for the first return, 1 for the second return.
+
+    Returns:
+       pcl: numpy (n * 4) array of xyz points and intensities
+    """
+    calibrations = sorted(frame.context.laser_calibrations, key=lambda c: c.name)
+    points = []
+    intensities = []
+
+    frame_pose = tf.convert_to_tensor(
+        value=np.reshape(np.array(frame.pose.transform), [4, 4]))
+    # [H, W, 6]
+    range_image_top_pose_tensor = tf.reshape(
+        tf.convert_to_tensor(value=range_image_top_pose.data),
+        range_image_top_pose.shape.dims)
+    # [H, W, 3, 3]
+    range_image_top_pose_tensor_rotation = transform_utils.get_rotation_matrix(
+        range_image_top_pose_tensor[..., 0], range_image_top_pose_tensor[..., 1],
+        range_image_top_pose_tensor[..., 2])
+    range_image_top_pose_tensor_translation = range_image_top_pose_tensor[..., 3:]
+    range_image_top_pose_tensor = transform_utils.get_transform(
+        range_image_top_pose_tensor_rotation,
+        range_image_top_pose_tensor_translation)
+    for c in calibrations:
+        range_image = range_images[c.name][ri_index]
+        if len(c.beam_inclinations) == 0:  # pylint: disable=g-explicit-length-test
+            beam_inclinations = range_image_utils.compute_inclination(
+                tf.constant([c.beam_inclination_min, c.beam_inclination_max]),
+                height=range_image.shape.dims[0])
+        else:
+            beam_inclinations = tf.constant(c.beam_inclinations)
+
+        beam_inclinations = tf.reverse(beam_inclinations, axis=[-1])
+        extrinsic = np.reshape(np.array(c.extrinsic.transform), [4, 4])
+
+        range_image_tensor = tf.reshape(
+            tf.convert_to_tensor(value=range_image.data), range_image.shape.dims)
+        pixel_pose_local = None
+        frame_pose_local = None
+
+        if c.name == open_dataset.LaserName.TOP:
+            pixel_pose_local = range_image_top_pose_tensor
+            pixel_pose_local = tf.expand_dims(pixel_pose_local, axis=0)
+            frame_pose_local = tf.expand_dims(frame_pose, axis=0)
+        range_image_mask = range_image_tensor[..., 0] > 0
+        range_image_cartesian = range_image_utils.extract_point_cloud_from_range_image(
+            tf.expand_dims(range_image_tensor[..., 0], axis=0),
+            tf.expand_dims(extrinsic, axis=0),
+            tf.expand_dims(tf.convert_to_tensor(value=beam_inclinations), axis=0),
+                pixel_pose=pixel_pose_local,
+                frame_pose=frame_pose_local)
+        range_image_intensity = range_image_tensor[...,1]
+
+        range_image_cartesian = tf.squeeze(range_image_cartesian, axis=0)
+
+        points_tensor = tf.gather_nd(range_image_cartesian,
+                                 tf.compat.v1.where(range_image_mask))
+        intensity_tensor = tf.gather_nd(range_image_intensity,
+                                 tf.compat.v1.where(range_image_mask))
+
+        points.append(points_tensor.numpy())
+        intensities.append(intensity_tensor.numpy())
+
+    points = np.concatenate(points, axis=0)
+    intensities = np.concatenate(intensities, axis=0)
+
+    # Adding intensities to numpy array
+    pcl = np.hstack((points, np.atleast_2d(intensities).T))
+    return pcl
 
 
 if __name__ == "__main__":
