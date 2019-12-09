@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import sys # Needed for relative imports
 sys.path.append('../') # Needed for relative imports
 
@@ -85,12 +86,13 @@ class DatasetCreator(object):
             formatter = logging.Formatter(
                 '%(asctime)s %(levelname)s %(message)s')
             fh.setFormatter(formatter)
+            fh.setLevel(logging.DEBUG)
             sh.setFormatter(formatter)
+            sh.setLevel(logging.INFO)
             self.logger.addHandler(fh)
             self.logger.addHandler(sh)
+            self.logger.setLevel(logging.DEBUG)
 
-        self.logger.setLevel(verbosity) if verbosity is not None \
-            else self.logger.setLevel(logging.INFO)
         self.logger.info('Logging set up for createDataset object')
         self.logger.debug('Exit:__init__')
 
@@ -118,7 +120,7 @@ class DatasetCreator(object):
         self.logger.debug('Entr:clusterByBBox')
 
         obj_pcls = {}  # Hash map of bbox label : pcl
-        self.logger.info("bbox initial count: %i" % len(bboxes))
+        self.logger.debug("bbox initial count: %i" % len(bboxes))
 
         for i, label in enumerate(bboxes):
 
@@ -132,14 +134,14 @@ class DatasetCreator(object):
                 obj_pcls[label.id] = cluster
             else:
                 obj_pcls[label.id] = None
-                self.logger.warning(
+                self.logger.debug(
                     "cluster_size=%i under threshold=%i"\
                     % (len(cluster), thresh))
 
             #if i == 5: break  # Uncomment to use subset of bboxes for debug
 
         self.logger.debug('Exit:clusterByBBox')
-        self.logger.info("bbox final count: %i" % len([o for o in obj_pcls if o is not None]))
+        self.logger.debug("bbox final count: %i" % len([o for o in obj_pcls if o is not None]))
         return obj_pcls
 
     def computeClusterMetadata(self, cluster, bbox):
@@ -180,7 +182,7 @@ class DatasetCreator(object):
         """
         self.logger.debug('Entr:saveClusterMetadata')
         filename = '%s/%s.json' % (self.dir_save, str(name))
-        self.logger.info('save_loc=%s' % filename)
+        self.logger.debug('save_loc=%s' % filename)
 
         # lambda function is used to serialize custom Features object
         with open(filename, 'w') as outfile:
@@ -231,11 +233,25 @@ class DatasetCreator(object):
 
         """
         self.logger.debug('Entr:run')
-        #'frames'
         tfrecord = tf.data.TFRecordDataset(data_file, compression_type='')
+        record_len = sum(1 for _ in tf.python_io.tf_record_iterator(data_file))
+        self.logger.debug('tfrecord has len %s' % record_len)
+
+        progress = []  # Store progress shown to avoid rounding duplicates
         for i, scan in enumerate(tfrecord):
+
+            # Print percent complete
+            percent = int(100 * i / record_len)
+            if percent % 10 == 0 and percent not in progress:
+                progress.append(percent)
+                self.logger.info(
+                    'STATUS UPDATE: tfrecord parse is %i%% percent complete.'
+                    % percent)
+
             frame = self.waymo_converter.create_frame(scan)
             frame.context.name = '%s-%i' % (frame.context.name, i)
+
+            # Parse frame if relevant json file doesn't already exist
             if self.checkDataFile(frame) and not overwrite:
                 self.logger.info(
                     'frame %s is already parsed.' % str(frame.context.name))
@@ -245,6 +261,8 @@ class DatasetCreator(object):
                     % (i, str(frame.context.name)))
                 self.parseFrame(frame)
 
+        self.logger.info(
+            'STATUS UPDATE: tfrecord parse is 100% percent complete.')
         self.logger.debug('Exit:run')
         return
 
@@ -271,7 +289,8 @@ class DatasetCreatorVis(DatasetCreator):
         """Extract and save data from a single given frame, viz if specified.
 
         If self.visualize is 1, shows original data.
-        If self.visualize is 2, shows clustered data.
+        If self.visualize is 2, shows filtered data.
+        If self.visualize is 3, shows clustered data.
         
         Args:
             frame: waymo open dataset Frame with loaded data
@@ -279,6 +298,9 @@ class DatasetCreatorVis(DatasetCreator):
         """
         self.logger.debug('Entr:parseFrame')
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
+        # Update visualize param
+        self.visualize = int(rp.get_param("/visualize", self.visualize)) 
+
         if self.visualize == 1:
             self.pcl_pub.publish(
                 self.ros_converter.convert2pcl(pcl))
@@ -286,8 +308,15 @@ class DatasetCreatorVis(DatasetCreator):
                 self.ros_converter.convert2markerarray(bboxes))
 
         pcl = self.filterPcl(pcl)
-        clusters = self.clusterByBBox(pcl, bboxes)
+
         if self.visualize == 2:
+            self.pcl_pub.publish(
+                self.ros_converter.convert2pcl(pcl))
+            self.marker_pub.publish(
+                self.ros_converter.convert2markerarray(bboxes))
+
+        clusters = self.clusterByBBox(pcl, bboxes)
+        if self.visualize == 3:
             try:
                 good_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
                 self.pcl_pub.publish(self.ros_converter.convert2pcl(
@@ -318,7 +347,7 @@ if __name__ == "__main__":
         'dir_log' : '%s/logs' % loc_pkg,
         'dir_save' : '%s/data/%s' % (loc_pkg, dataset),
         'verbosity' : logging.DEBUG,
-        'visualize' : 2
+        'visualize' : 1
     }
     print(args_default)
 
@@ -345,5 +374,15 @@ if __name__ == "__main__":
             verbosity=verbosity)
     
     creator.logger.info("enable_rviz = %s" % enable_rviz)
-    for f in glob.glob('%s/*.tfrecord' % dir_load):
+    file_list = glob.glob('%s/*.tfrecord' % dir_load)
+    tfrecord_len = sum(1 for _ in file_list)
+    creator.logger.info('Found %i tfrecord files' % tfrecord_len)
+
+    for i, f in enumerate(file_list):
+
+        # Print percent complete
+        creator.logger.info(
+            'STATUS UPDATE: dataset parse is %i%% percent complete.'
+            % int(100 * i / tfrecord_len))
+
         creator.run(f)
