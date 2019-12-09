@@ -10,7 +10,7 @@ from scipy.spatial import ConvexHull, convex_hull_plot_2d
 from scipy.signal import resample
 import matplotlib.pyplot as plt
 
-GROUND_THRESHOLD = 1  # meters
+GROUND_THRESHOLD = 0.1  # meters
 MAX_CLUSTER_PTS = 200 # max number of points in a cluster
 
 def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
