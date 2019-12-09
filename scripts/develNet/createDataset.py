@@ -288,14 +288,14 @@ class DatasetCreatorVis(DatasetCreator):
         pcl = self.filterPcl(pcl)
         clusters = self.clusterByBBox(pcl, bboxes)
         if self.visualize == 2:
-            #try:
-            good_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
-            self.pcl_pub.publish(self.ros_converter.convert2pcl(
-                np.concatenate(good_clusters.values())))
-            self.marker_pub.publish(self.ros_converter.convert2markerarray(
-                [b for b in bboxes if str(b.id) in good_clusters.keys()]))
-            #except:
-                #self.logger.warning("No pcl with count > 25 pts")
+            try:
+                good_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
+                self.pcl_pub.publish(self.ros_converter.convert2pcl(
+                    np.concatenate(good_clusters.values())))
+                self.marker_pub.publish(self.ros_converter.convert2markerarray(
+                    [b for b in bboxes if str(b.id) in good_clusters.keys()]))
+            except:
+                self.logger.warning("No pcl with count > 25 pts")
 
         metadata = [self.computeClusterMetadata(c, bboxes[i])
             for i, c in enumerate(clusters.values()) if c is not None]
@@ -311,7 +311,7 @@ if __name__ == "__main__":
 
     user = 'cnovak'
     loc_pkg = '/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection'
-    dataset = 'training_0001'
+    dataset = 'training_0000'
 
     args_default = {
         'dir_load' : '/home/%s/Data/waymo-od/%s' % (user, dataset),
