@@ -96,7 +96,10 @@ class Features(object):
         cluster_id: unique unicode ID for cluster
         cls: class ID of feature
         cnt: number of points
-        parameters: list of parameters [e_x, e_y, e_z, vol, density]
+        parameters: list of parameters
+            x = cluster COM along x axis
+            y = cluster COM along y axis
+            z = cluster COM along x axis
             e_x = eigenvalue along x axis
             e_y = eigenvalue along y axis
             e_z = eigenvalue along z axis
@@ -107,25 +110,28 @@ class Features(object):
             var_intensity = variance of intensity in cluster
     """
     def __init__(self, cluster_id=None, cls=None, cnt=None,
-                 e_x=0, e_y=0, e_z=0, vol=0, density=0,
+                 x=0, y=0, z=0, e_x=0, e_y=0, e_z=0, vol=0, density=0,
                  max_intensity=0, mean_intensity=0, var_intensity=0):
 
         self.cluster_id = cluster_id
         self.cls = cls
         self.cnt = cnt
-        self.parameters = [e_x, e_y, e_z, vol, density,
+        self.parameters = [x, y, z, e_x, e_y, e_z, vol, density,
                            max_intensity, mean_intensity, var_intensity]
 
     def __str__(self):
         return "Cluster ID: "                + str(self.cluster_id)    + "\n" \
                "Point Count: "               + str(self.cnt)           + "\n" \
                "Class: "                     + str(self.cls)           + "\n" \
-               "Paramters:"                                            + "\n" \
-               "    Eigenvalue X: "          + str(self.parameters[0]) + "\n" \
-               "    Eigenvalue Y: "          + str(self.parameters[1]) + "\n" \
-               "    Eigenvalue Z: "          + str(self.parameters[2]) + "\n" \
-               "    Bounding box volume: "   + str(self.parameters[3]) + "\n" \
-               "    Cluster point density: " + str(self.parameters[4]) + "\n" \
-               "    Max Intensity: "         + str(self.parameters[5]) + "\n" \
-               "    Average Intensity: "     + str(self.parameters[6]) + "\n" \
-               "    Intensity Variance: "    + str(self.parameters[7]) + "\n"
+               "Parameters:"                                           + "\n" \
+               "    COM x: "                 + str(self.parameters[0]) + "\n" \
+               "    COM y: "                 + str(self.parameters[1]) + "\n" \
+               "    COM z: "                 + str(self.parameters[2]) + "\n" \
+               "    Eigenvalue X: "          + str(self.parameters[3]) + "\n" \
+               "    Eigenvalue Y: "          + str(self.parameters[4]) + "\n" \
+               "    Eigenvalue Z: "          + str(self.parameters[5]) + "\n" \
+               "    Bounding box volume: "   + str(self.parameters[6]) + "\n" \
+               "    Cluster point density: " + str(self.parameters[7]) + "\n" \
+               "    Max Intensity: "         + str(self.parameters[8]) + "\n" \
+               "    Average Intensity: "     + str(self.parameters[9]) + "\n" \
+               "    Intensity Variance: "    + str(self.parameters[10]) + "\n"
