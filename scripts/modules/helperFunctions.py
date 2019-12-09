@@ -104,6 +104,7 @@ class Features(object):
         cluster_id: unique unicode ID for cluster
         cls: class ID of feature
         cnt: number of points
+        key: dict of parameter variables : index in parameters
         parameters: list of parameters
             x = cluster COM along x axis
             y = cluster COM along y axis
@@ -124,6 +125,11 @@ class Features(object):
         self.cluster_id = cluster_id
         self.cls = cls
         self.cnt = cnt
+        # Key to standardize self.parameters notation
+        self.key = {
+            'x' : 0, 'y' : 1, 'z' : 2, 'e_x' : 3, 'e_y' : 4, 'e_z' : 5,
+            'vol' : 6, 'density' : 7,
+            'max_intensity' : 8, 'mean_intensity' : 9, 'var_intensity' : 10}
         self.parameters = [x, y, z, e_x, e_y, e_z, vol, density,
                            max_intensity, mean_intensity, var_intensity]
 
