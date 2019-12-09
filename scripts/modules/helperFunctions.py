@@ -34,6 +34,9 @@ def extract_cluster_parameters(cluster, display=False):
 
     Returns:
         parameters: list of parameters [e_x, e_y, e_z, vol, density]
+            x = cluster COM along x axis
+            y = cluster COM along y axis
+            z = cluster COM along x axis
             e_x = eigenvalue along x axis
             e_y = eigenvalue along y axis
             e_z = eigenvalue along z axis
@@ -43,6 +46,11 @@ def extract_cluster_parameters(cluster, display=False):
             mean_intensity = average intensity in cluster
             var_intensity = variance of intensity in cluster
     """
+    # Average x, y, and z to get COM of cluster
+    x = np.mean(cluster[:,0])
+    y = np.mean(cluster[:,1])
+    z = np.mean(cluster[:,2])
+
     # Downsample to smaller number of points - objects close to lidar contain
     # significantly more points than ones further away
     if cluster.shape[0] > MAX_CLUSTER_PTS:
@@ -61,7 +69,7 @@ def extract_cluster_parameters(cluster, display=False):
     mean_intensity = np.mean(cluster[:,3])
     var_intensity = np.var(cluster[:,3])
 
-    output = [e_x, e_y, e_z, vol, density,
+    output = [x, y, z, e_x, e_y, e_z, vol, density,
               max_intensity, mean_intensity, var_intensity]
     return output
 
