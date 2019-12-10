@@ -60,6 +60,8 @@ def json2csv(json_dir, csv_dir, csv_name):
                 for key, index in feature_obj.key.items():
                     data_row[key] = data['parameters'][index]
 
+                data_row = {
+                    k : v for k, v in data_row.items() if k in fieldnames}
                 writer.writerow(data_row)
 
     except IOError:
