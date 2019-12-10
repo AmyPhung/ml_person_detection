@@ -96,6 +96,35 @@ def compute_volume(points, display=False):
 
     return volume
 
+def get_pts_in_bbox(pcl, bbox, logger=None):
+    """Return ndarray of points from pcl within bbox."""
+    # Get bbox limits in bbox coord frame
+    x_lo = bbox.box.center_x - bbox.box.length/2
+    x_hi = bbox.box.center_x + bbox.box.length/2
+    y_lo = bbox.box.center_y - bbox.box.width/2
+    y_hi = bbox.box.center_y + bbox.box.width/2
+    if logger is not None:
+        logger.debug('bbox limits: %0.2f-%0.2f, %0.2f-%0.2f'
+            % (x_lo, x_hi, y_lo, y_hi))
+    else:
+        print('bbox limits: %0.2f to %0.2f x, %0.2f to %0.2f y'
+            % (x_lo, x_hi, y_lo, y_hi))
+
+    # Rotate points by bbox heading angle
+    ang = np.radians(bbox.box.heading)
+    r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
+    r_pcl = np.matmul(pcl[:, 0:2], r_mat)
+
+    # Add back in z and intensity data
+    r_pcl = np.append(r_pcl, pcl[:, 2:], axis=1)
+
+    # Sub-select pcl by bbox limits
+    indxs = np.where(
+        (x_lo < r_pcl[:, 0]) & (r_pcl[:, 0] < x_hi)
+        & (y_lo < r_pcl[:, 1]) & (r_pcl[:, 1] < y_hi))[0]
+    pcl_out = r_pcl[indxs]
+    return pcl_out
+
 
 class Features(object):
     """Class to store features of a cluster
@@ -118,11 +147,12 @@ class Features(object):
             mean_intensity = average intensity in cluster
             var_intensity = variance of intensity in cluster
     """
-    def __init__(self, cluster_id=None, cls=None, cnt=None,
+    def __init__(self, cluster_id=None, frame_id=None, cls=None, cnt=None,
                  x=0, y=0, z=0, e_x=0, e_y=0, e_z=0, vol=0, density=0,
                  max_intensity=0, mean_intensity=0, var_intensity=0):
 
         self.cluster_id = cluster_id
+        self.frame_id = frame_id
         self.cls = cls
         self.cnt = cnt
         # Key to standardize self.parameters notation
@@ -135,6 +165,7 @@ class Features(object):
 
     def __str__(self):
         return "Cluster ID: "                + str(self.cluster_id)    + "\n" \
+               "Frame ID: "                  + str(self.frame_id)      + "\n" \
                "Point Count: "               + str(self.cnt)           + "\n" \
                "Class: "                     + str(self.cls)           + "\n" \
                "Parameters:"                                           + "\n" \
@@ -149,3 +180,12 @@ class Features(object):
                "    Max Intensity: "         + str(self.parameters[8]) + "\n" \
                "    Average Intensity: "     + str(self.parameters[9]) + "\n" \
                "    Intensity Variance: "    + str(self.parameters[10]) + "\n"
+
+    def as_dict(self):
+        return {
+            'cluster_id' : self.cluster_id,
+            'frame_id' : self.frame_id,
+            'cls' : self.cls,
+            'cnt' : self.cnt,
+            'parameters' : self.parameters
+        }

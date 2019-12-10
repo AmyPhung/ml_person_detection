@@ -24,34 +24,6 @@ XYPair = namedtuple('XYPair', 'x y')
 XYZPair = namedtuple('XYZPair', 'x y z')
 
 
-
-def get_pts_in_bbox(pcl, bbox, logger=None):
-    """Return ndarray of points from pcl within bbox."""
-    # Get bbox limits in bbox coord frame
-    x_lo = bbox.box.center_x - bbox.box.length/2
-    x_hi = bbox.box.center_x + bbox.box.length/2
-    y_lo = bbox.box.center_y - bbox.box.width/2
-    y_hi = bbox.box.center_y + bbox.box.width/2
-    if logger is not None:
-        logger.debug('bbox limits: %0.2f-%0.2f, %0.2f-%0.2f'
-            % (x_lo, x_hi, y_lo, y_hi))
-
-    # Rotate points by bbox heading angle
-    ang = np.radians(bbox.box.heading)
-    r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
-    r_pcl = np.matmul(pcl[:, 0:2], r_mat)
-
-    # Add back in z and intensity data
-    r_pcl = np.append(r_pcl, pcl[:, 2:], axis=1)
-
-    # Sub-select pcl by bbox limits
-    indxs = np.where(
-        (x_lo < r_pcl[:, 0]) & (r_pcl[:, 0] < x_hi)
-        & (y_lo < r_pcl[:, 1]) & (r_pcl[:, 1] < y_hi))[0]
-    pcl_out = r_pcl[indxs]
-    return pcl_out
-
-
 class DatasetCreator(object):
     """Class for creating labeled cluster metadata from raw waymo data.
 
@@ -144,12 +116,13 @@ class DatasetCreator(object):
         self.logger.debug("bbox final count: %i" % len([o for o in obj_pcls if o is not None]))
         return obj_pcls
 
-    def computeClusterMetadata(self, cluster, bbox):
+    def computeClusterMetadata(self, cluster, bbox, frame_id):
         """Compute key information from cluster to boil down pointcloud info.
 
         Args:
             cluster: list of xyz points and intensities within cluster
             bbox: waymo object label output
+            frame_id: int of frame index into tfrecord
 
         Returns:
             features: Features object containing cluster features
@@ -164,6 +137,7 @@ class DatasetCreator(object):
 
         features = Features()
         features.cluster_id = bbox.id
+        features.frame_id = frame_id
         features.cls = bbox.type
         features.cnt = cluster.shape[0]
         features.parameters = extract_cluster_parameters(np_cluster, display=False)
@@ -185,23 +159,25 @@ class DatasetCreator(object):
         self.logger.debug('save_loc=%s' % filename)
 
         # lambda function is used to serialize custom Features object
+        print(metadata)
         with open(filename, 'w') as outfile:
-            json.dump(metadata, outfile, default=lambda o: o.__dict__, indent=4)
+            json.dump(metadata, outfile, default=lambda o: o.as_dict(), indent=4)
 
         self.logger.debug('Exit:saveClusterMetadata')
 
-    def parseFrame(self, frame):
+    def parseFrame(self, frame, frame_id):
         """Extract and save data from a single given frame.
 
         Args:
             frame: waymo open dataset Frame with loaded data
+            frame_id: index of waymo Frame in tfrecord
 
         """
         self.logger.debug('Entr:parseFrame')
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
         pcl = self.filterPcl(pcl)
         clusters = self.clusterByBBox(pcl, bboxes)
-        metadata = [self.computeClusterMetadata(c, bboxes[i])
+        metadata = [self.computeClusterMetadata(c, bboxes[i], frame_id)
             for i, c in enumerate(clusters.values()) if c is not None]
         self.saveClusterMetadata(metadata, frame.context.name)
         self.logger.debug('Exit:parseFrame')
@@ -226,6 +202,7 @@ class DatasetCreator(object):
 
         Args:
             data_file: str .tfrecord file to parse
+            file_number: optional str to print
             overwrite: Bool for overwriting already existing data
 
         Todo:
@@ -240,6 +217,11 @@ class DatasetCreator(object):
         progress = []  # Store progress shown to avoid rounding duplicates
         for i, scan in enumerate(tfrecord):
 
+
+            # Transform raw waymo scan to numpy frame
+            frame = self.waymo_converter.create_frame(scan)
+            frame.context.name = '%s-%i' % (frame.context.name, i)
+
             # Print percent complete
             percent = int(100 * i / record_len)
             if percent % 10 == 0 and percent not in progress:
@@ -248,18 +230,15 @@ class DatasetCreator(object):
                     'STATUS UPDATE: tfrecord %s parse is %i%% percent complete.'
                     % (file_number, percent))
 
-            frame = self.waymo_converter.create_frame(scan)
-            frame.context.name = '%s-%i' % (frame.context.name, i)
-
             # Parse frame if relevant json file doesn't already exist
             if self.checkDataFile(frame) and not overwrite:
                 self.logger.info(
-                    'frame %s is already parsed.' % str(frame.context.name))
+                    'frame %i is already parsed.' % str(frame.context.name))
             else:
                 self.logger.info(
-                    'frame_num=%i, frame_id=%s' \
+                    'frame #: %i, tfrecord id: %s' \
                     % (i, str(frame.context.name)))
-                self.parseFrame(frame)
+                self.parseFrame(frame, i)
 
         self.logger.info(
             'STATUS UPDATE: tfrecord parse is 100% percent complete.')
@@ -285,7 +264,7 @@ class DatasetCreatorVis(DatasetCreator):
             dir_log=dir_log, verbosity=verbosity)
         self.logger.debug('Exit:__init__')
 
-    def parseFrame(self, frame):
+    def parseFrame(self, frame, frame_id):
         """Extract and save data from a single given frame, viz if specified.
 
         If self.visualize is 1, shows original data.
@@ -326,7 +305,7 @@ class DatasetCreatorVis(DatasetCreator):
             except:
                 self.logger.warning("No pcl with count > 25 pts")
 
-        metadata = [self.computeClusterMetadata(c, bboxes[i])
+        metadata = [self.computeClusterMetadata(c, bboxes[i], frame_id)
             for i, c in enumerate(clusters.values()) if c is not None]
         self.saveClusterMetadata(metadata, frame.context.name)
         self.logger.debug('Exit:parseFrame')
@@ -340,7 +319,7 @@ if __name__ == "__main__":
 
     user = 'cnovak'
     loc_pkg = '/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection'
-    dataset = 'training_0000'
+    dataset = 'validation_0000'
 
     args_default = {
         'dir_load' : '/home/%s/Data/waymo-od/%s' % (user, dataset),
@@ -349,7 +328,6 @@ if __name__ == "__main__":
         'verbosity' : logging.DEBUG,
         'visualize' : 1
     }
-    print(args_default)
 
     if enable_rviz:
         dir_load = rp.get_param("/dir_load", args_default['dir_load'])
@@ -374,6 +352,7 @@ if __name__ == "__main__":
             verbosity=verbosity)
     
     creator.logger.info("enable_rviz = %s" % enable_rviz)
+
     file_list = glob.glob('%s/*.tfrecord' % dir_load)
     tfrecord_len = sum(1 for _ in file_list)
     creator.logger.info('Found %i tfrecord files' % tfrecord_len)
