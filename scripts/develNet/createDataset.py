@@ -8,8 +8,9 @@ import glob
 import json
 import logging
 import os.path
-import rospy as rp
+import pdb
 
+import rospy as rp
 import numpy as np
 import tensorflow as tf
 
@@ -159,7 +160,6 @@ class DatasetCreator(object):
         self.logger.debug('save_loc=%s' % filename)
 
         # lambda function is used to serialize custom Features object
-        print(metadata)
         with open(filename, 'w') as outfile:
             json.dump(metadata, outfile, default=lambda o: o.as_dict(), indent=4)
 
@@ -177,8 +177,8 @@ class DatasetCreator(object):
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
         pcl = self.filterPcl(pcl)
         clusters = self.clusterByBBox(pcl, bboxes)
-        metadata = [self.computeClusterMetadata(c, bboxes[i], frame_id)
-            for i, c in enumerate(clusters.values()) if c is not None]
+        metadata = [self.computeClusterMetadata(clusters[b.id], b, frame_id)
+            for b in bboxes if clusters[b.id] is not None]
         self.saveClusterMetadata(metadata, frame.context.name)
         self.logger.debug('Exit:parseFrame')
         return
@@ -212,15 +212,15 @@ class DatasetCreator(object):
         self.logger.debug('Entr:run')
         tfrecord = tf.data.TFRecordDataset(data_file, compression_type='')
         record_len = sum(1 for _ in tf.python_io.tf_record_iterator(data_file))
-        self.logger.debug('tfrecord has len %s' % record_len)
+        self.logger.debug('Found %s frames in tfrecord' % record_len)
 
         progress = []  # Store progress shown to avoid rounding duplicates
         for i, scan in enumerate(tfrecord):
 
-
             # Transform raw waymo scan to numpy frame
             frame = self.waymo_converter.create_frame(scan)
             frame.context.name = '%s-%i' % (frame.context.name, i)
+            print(frame.context.name)
 
             # Print percent complete
             percent = int(100 * i / record_len)
@@ -233,7 +233,7 @@ class DatasetCreator(object):
             # Parse frame if relevant json file doesn't already exist
             if self.checkDataFile(frame) and not overwrite:
                 self.logger.info(
-                    'frame %i is already parsed.' % str(frame.context.name))
+                    'frame %i is already parsed.' % i)
             else:
                 self.logger.info(
                     'frame #: %i, tfrecord id: %s' \
@@ -355,7 +355,8 @@ if __name__ == "__main__":
 
     file_list = glob.glob('%s/*.tfrecord' % dir_load)
     tfrecord_len = sum(1 for _ in file_list)
-    creator.logger.info('Found %i tfrecord files' % tfrecord_len)
+    creator.logger.info(
+        'Found %i tfrecord files in dataset %s' % (tfrecord_len, dataset))
 
     for i, f in enumerate(file_list):
 
