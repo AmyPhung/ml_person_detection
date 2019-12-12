@@ -4,10 +4,9 @@
   <node name="rviz" pkg="rviz" type="rviz" 
     args="-d $(find ml_person_detection)/rviz/createDataset.rviz"/>
 
-  <param name="/enable_rviz" type="bool" value="False" />
   <param name="/visualize" type="int" value="3" />
-  <node name="createDataset" pkg="ml_person_detection"
-    type="createDataset.py" output="screen"/>
+  <node name="introspectDataset" pkg="ml_person_detection"
+    type="introspectDataset.py" output="screen"/>
 
 </launch>
 
