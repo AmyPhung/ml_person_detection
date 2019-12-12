@@ -35,11 +35,13 @@ class DatasetCreator(object):
 
     """
 
-    def __init__(self, dir_load, dir_save, logger=None, dir_log=None, verbosity=None):
+    def __init__(self, dir_load, dir_save, logger=None, dir_log=None,
+                 verbosity=None, density_thresh=0):
         """Provide directory location to find frames."""
         self.waymo_converter = Waymo2Numpy()
         self.dir_load = dir_load
         self.dir_save = dir_save
+        self.density_thresh=density_thresh
 
         # Set up logger if not given as arg
         if logger is not None:
@@ -297,9 +299,10 @@ class DatasetCreatorVis(DatasetCreator):
 
     def __init__(
             self, dir_load, dir_save, logger=None, dir_log=None,
-            verbosity=None, visualize=0):
+            verbosity=None, visualize=0, density_thresh=0):
         """Initialize Ros components, DatasetCreator, visualize setting."""
 
+        self.density_thresh=density_thresh
         self.visualize = visualize
         self.ros_converter = Waymo2Ros()
         rp.init_node('dataset_creator_vis', disable_signals=True)
@@ -307,7 +310,7 @@ class DatasetCreatorVis(DatasetCreator):
         self.pcl_pub = rp.Publisher('/pcl', PointCloud2, queue_size=1)
         DatasetCreator.__init__(
             self, dir_load=dir_load, dir_save=dir_save, logger=logger,
-            dir_log=dir_log, verbosity=verbosity)
+            dir_log=dir_log, verbosity=verbosity, density_thresh=density_thresh)
         self.logger.debug('Exit:__init__')
 
     def parseFrame(self, frame, frame_id):
@@ -363,29 +366,26 @@ class DatasetCreatorVis(DatasetCreator):
         metadata = [self.computeClusterMetadata(valid_clusters[bbox.id], bbox,
             frame_id) for i, bbox in enumerate(valid_bboxes)]
 
-        # TODO: Why do these two lists not contain the same IDs?
-        # print("valid cluster ids:" )
-        # print(valid_clusters.keys())
-        # print("metadata cluster ids:")
-        # for m in metadata:
-        #     print(m.cluster_id)
-        #
-        # print("Total valid clusters: " + str(len(valid_clusters.keys())))
-        # print("Total metadata clusters: " + str(len(metadata)))
-
-
+        self.density_thresh = \
+            int(rp.get_param("/density_thresh", self.density_thresh))
         sub_metadata, sub_clusters = \
-            self.filterMetadata(metadata, valid_clusters)
+            self.filterMetadata(metadata, valid_clusters, self.density_thresh)
 
         if self.visualize == 4:
-            # try:
-                # print(sub_clusters)
-            self.pcl_pub.publish(self.ros_converter.convert2pcl(
-                np.concatenate(sub_clusters.values())))
-            self.marker_pub.publish(self.ros_converter.convert2markerarray(
-                [b for b in bboxes if str(b.id) in sub_clusters.keys()]))
-            # except:
-                # self.logger.warning("No pcl with density > 100 pts/m^3")
+            try:
+                # Decided to plot full pointcloud since it makes it easier to
+                # tell that nothing important is being removed. To only plot
+                # points that are a part of the new sub-selected clusters,
+                # uncomment this code
+                # self.pcl_pub.publish(self.ros_converter.convert2pcl(
+                #     np.concatenate(sub_clusters.values())))
+
+                self.pcl_pub.publish(
+                    self.ros_converter.convert2pcl(pcl))
+                self.marker_pub.publish(self.ros_converter.convert2markerarray(
+                    [b for b in bboxes if str(b.id) in sub_clusters.keys()]))
+            except:
+                self.logger.warning("No pcl with density > 100 pts/m^3")
 
 
         self.saveClusterMetadata(sub_metadata, frame.context.name)
