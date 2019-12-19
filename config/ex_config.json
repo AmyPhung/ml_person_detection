@@ -1,0 +1,9 @@
+{
+    "pkg_loc": "",
+    "data_loc": "",
+    "dataset": "training_0000",
+    "verbosity": "debug",
+    "enable_logging": 0,
+    "enable_rviz": 0,
+    "enable_datasave": 0
+} 
