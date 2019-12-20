@@ -5,6 +5,7 @@ This module holds functions that are used in both pipelines:
     remove_groundplane()
     extract_pcl_features()
 """
+import pdb
 import numpy as np
 from scipy.spatial import ConvexHull, convex_hull_plot_2d
 from scipy.signal import resample
@@ -97,7 +98,18 @@ def compute_volume(points, display=False):
     return volume
 
 def get_pts_in_bbox(pcl, bbox, logger=None):
-    """Return ndarray of points from pcl within bbox."""
+    """Return ndarray of points from pcl within bbox.
+
+    Given pointcloud and bounding box, transforms pointcloud into coordinate
+    frame of bounding box, thresholds by box dimensions, returns points
+    in original coordinate system.
+
+    Args:
+        pcl: n*4 list of 3d points with intensities.
+        bbox: tf bounding box object to check for point collision.
+        logger: optional python logging object to print debug info.
+
+    """
     # Get bbox limits in bbox coord frame
     x_lo = bbox.box.center_x - bbox.box.length/2
     x_hi = bbox.box.center_x + bbox.box.length/2
@@ -115,14 +127,11 @@ def get_pts_in_bbox(pcl, bbox, logger=None):
     r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
     r_pcl = np.matmul(pcl[:, 0:2], r_mat)
 
-    # Add back in z and intensity data
-    r_pcl = np.append(r_pcl, pcl[:, 2:], axis=1)
-
     # Sub-select pcl by bbox limits
     indxs = np.where(
         (x_lo < r_pcl[:, 0]) & (r_pcl[:, 0] < x_hi)
         & (y_lo < r_pcl[:, 1]) & (r_pcl[:, 1] < y_hi))[0]
-    pcl_out = r_pcl[indxs]
+    pcl_out = pcl[indxs].astype('float64')
     return pcl_out
 
 

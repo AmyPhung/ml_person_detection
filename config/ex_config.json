@@ -1,0 +1,10 @@
+{
+    "_comment": "verbosities: critical=50, error=40, warning=30, info=20, debug=10, notset=0",
+    "pkg_loc": "",
+    "data_loc": "",
+    "dataset": "training_0000",
+    "verbosity": 0,
+    "enable_logging": 0,
+    "enable_rviz": 0,
+    "enable_datasave": 0
+} 
