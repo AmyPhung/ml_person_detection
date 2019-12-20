@@ -1,13 +1,13 @@
 <launch>
 
   <!-- Show in Rviz   -->
-  <node name="rviz" pkg="rviz" type="rviz" 
+  <node name="rviz" pkg="rviz" type="rviz"
     args="-d $(find ml_person_detection)/rviz/createDataset.rviz"/>
 
-  <param name="/enable_rviz" type="bool" value="False" />
-  <param name="/visualize" type="int" value="3" />
+  <param name="/enable_rviz" type="bool" value="True" />
+  <param name="/visualize" type="int" value="4" />
+  <param name="/density_thresh" type="int" value="10" />
   <node name="createDataset" pkg="ml_person_detection"
     type="createDataset.py" output="screen"/>
 
 </launch>
-

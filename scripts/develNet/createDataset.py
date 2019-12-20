@@ -35,11 +35,13 @@ class DatasetCreator(object):
 
     """
 
-    def __init__(self, dir_load, dir_save, logger=None, dir_log=None, verbosity=None):
+    def __init__(self, dir_load, dir_save, logger=None, dir_log=None,
+                 verbosity=None, density_thresh=0):
         """Provide directory location to find frames."""
         self.waymo_converter = Waymo2Numpy()
         self.dir_load = dir_load
         self.dir_save = dir_save
+        self.density_thresh=density_thresh
 
         # Set up logger if not given as arg
         if logger is not None:
@@ -78,18 +80,20 @@ class DatasetCreator(object):
         self.logger.debug('Exit:filterPcl')
         return pcl_out
 
-    def clusterByBBox(self, pcl, bboxes, thresh=25):
+    def clusterByBBox(self, pcl, bboxes, thresh=5):
         """Extract points from pcl within bboxes as clusters.
 
         Args:
             pcl: (n * 4) numpy array of xyz points and intensities
             bboxes: waymo pcl label output
-            thresh: min int point num for cluster
+            thresh: min int point num for cluster (relatively small threshold -
+                kept to prevent math errors in metadata computation)
 
         Returns:
-            obj_pcls: list of (n * 4) numpy arrays of xyz points and intensities
+            obj_pcls: Hash map of bbox label : pcl where the pcl contains
+                (n * 4) numpy arrays of xyz points and intensities
         """
-        
+
         self.logger.debug('Entr:clusterByBBox')
 
         obj_pcls = {}  # Hash map of bbox label : pcl
@@ -146,6 +150,40 @@ class DatasetCreator(object):
         self.logger.debug('Exit:computeClusterMetadata')
         return features
 
+    def filterMetadata(self, metadata, clusters, thresh=20):
+        """Removes clusters with a density smaller than the specified threshold
+        from the dataset
+
+        Args:
+            metadata: list of Features objects containing key information about
+                each cluster in frame
+            clusters: Hash map of bbox label : pcl where the pcl contains
+                (n * 4) numpy arrays of xyz points and intensities with None
+                types removed
+            thresh: minimum number of points per cubic meter
+
+        Returns:
+            filtered_metadata: list of Features objects which meet the minimum
+                density requirement
+            filtered_clusters: list of (n * 4) numpy arrays of xyz points and
+                intensities corresponding with Features that meet the min
+                density requirement
+        """
+        filtered_metadata = []
+        filtered_clusters = {}
+
+        for i in range(len(metadata)):
+            c = metadata[i]
+
+            if c.parameters[7] > thresh: # 7th parameter is density
+                filtered_clusters[c.cluster_id] = clusters[c.cluster_id]
+                filtered_metadata.append(c)
+            # else:
+            #     self.logger.warning("Sparse cluster detected in\
+            #         filterMetadata")
+
+        return filtered_metadata, filtered_clusters
+
     def saveClusterMetadata(self, metadata, name):
         """Save cluster metadata from frame in a .json file. Uses frame name as
         .json filename
@@ -176,10 +214,20 @@ class DatasetCreator(object):
         self.logger.debug('Entr:parseFrame')
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
         pcl = self.filterPcl(pcl)
+
         clusters = self.clusterByBBox(pcl, bboxes)
         metadata = [self.computeClusterMetadata(clusters[b.id], b, frame_id)
             for b in bboxes if clusters[b.id] is not None]
-        self.saveClusterMetadata(metadata, frame.context.name)
+
+        sub_metadata = self.filterMetadata(metadata)
+
+        # TODO: update this portion
+        # clusters = self.clusterByBBox(pcl, bboxes) # remove threshold here
+        # metadata = [self.computeClusterMetadata(c, bboxes[i])
+        #     for i, c in enumerate(clusters.values()) if c is not None]
+        # # subselect metatada here + remove  def subselect metadata
+
+        self.saveClusterMetadata(sub_metadata, frame.context.name)
         self.logger.debug('Exit:parseFrame')
         return
 
@@ -251,9 +299,10 @@ class DatasetCreatorVis(DatasetCreator):
 
     def __init__(
             self, dir_load, dir_save, logger=None, dir_log=None,
-            verbosity=None, visualize=0):
+            verbosity=None, visualize=0, density_thresh=0):
         """Initialize Ros components, DatasetCreator, visualize setting."""
 
+        self.density_thresh=density_thresh
         self.visualize = visualize
         self.ros_converter = Waymo2Ros()
         rp.init_node('dataset_creator_vis', disable_signals=True)
@@ -261,16 +310,17 @@ class DatasetCreatorVis(DatasetCreator):
         self.pcl_pub = rp.Publisher('/pcl', PointCloud2, queue_size=1)
         DatasetCreator.__init__(
             self, dir_load=dir_load, dir_save=dir_save, logger=logger,
-            dir_log=dir_log, verbosity=verbosity)
+            dir_log=dir_log, verbosity=verbosity, density_thresh=density_thresh)
         self.logger.debug('Exit:__init__')
 
     def parseFrame(self, frame, frame_id):
         """Extract and save data from a single given frame, viz if specified.
 
         If self.visualize is 1, shows original data.
-        If self.visualize is 2, shows filtered data.
+        If self.visualize is 2, shows ground filtered data.
         If self.visualize is 3, shows clustered data.
-        
+        If self.visualize is 4, shows density filtered data.
+
         Args:
             frame: waymo open dataset Frame with loaded data
 
@@ -278,7 +328,7 @@ class DatasetCreatorVis(DatasetCreator):
         self.logger.debug('Entr:parseFrame')
         pcl, bboxes = self.waymo_converter.unpack_frame(frame)
         # Update visualize param
-        self.visualize = int(rp.get_param("/visualize", self.visualize)) 
+        self.visualize = int(rp.get_param("/visualize", self.visualize))
 
         if self.visualize == 1:
             self.pcl_pub.publish(
@@ -295,19 +345,50 @@ class DatasetCreatorVis(DatasetCreator):
                 self.ros_converter.convert2markerarray(bboxes))
 
         clusters = self.clusterByBBox(pcl, bboxes)
+        valid_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
+
+        valid_clusters = {}
+        valid_bboxes = []
+        for bbox in bboxes:
+            if clusters[bbox.id] is not None:
+                valid_clusters[bbox.id] = clusters[bbox.id]
+                valid_bboxes.append(bbox)
+
         if self.visualize == 3:
             try:
-                good_clusters = {k:v for k, v in clusters.iteritems() if v is not None}
                 self.pcl_pub.publish(self.ros_converter.convert2pcl(
-                    np.concatenate(good_clusters.values())))
+                    np.concatenate(valid_clusters.values())))
                 self.marker_pub.publish(self.ros_converter.convert2markerarray(
-                    [b for b in bboxes if str(b.id) in good_clusters.keys()]))
+                    [b for b in bboxes if str(b.id) in valid_clusters.keys()]))
             except:
-                self.logger.warning("No pcl with count > 25 pts")
+                self.logger.warning("No pcl with count > 10 pts")
 
-        metadata = [self.computeClusterMetadata(c, bboxes[i], frame_id)
-            for i, c in enumerate(clusters.values()) if c is not None]
-        self.saveClusterMetadata(metadata, frame.context.name)
+        metadata = [self.computeClusterMetadata(valid_clusters[bbox.id], bbox,
+            frame_id) for i, bbox in enumerate(valid_bboxes)]
+
+        self.density_thresh = \
+            int(rp.get_param("/density_thresh", self.density_thresh))
+        sub_metadata, sub_clusters = \
+            self.filterMetadata(metadata, valid_clusters, self.density_thresh)
+
+        if self.visualize == 4:
+            try:
+                # Decided to plot full pointcloud since it makes it easier to
+                # tell that nothing important is being removed. To only plot
+                # points that are a part of the new sub-selected clusters,
+                # uncomment this code
+                # self.pcl_pub.publish(self.ros_converter.convert2pcl(
+                #     np.concatenate(sub_clusters.values())))
+
+                self.pcl_pub.publish(
+                    self.ros_converter.convert2pcl(pcl))
+                self.marker_pub.publish(self.ros_converter.convert2markerarray(
+                    [b for b in bboxes if str(b.id) in sub_clusters.keys()]))
+            except:
+                self.logger.warning("No pcl with density > 100 pts/m^3")
+
+
+        self.saveClusterMetadata(sub_metadata, frame.context.name)
         self.logger.debug('Exit:parseFrame')
         return
 
@@ -317,16 +398,16 @@ if __name__ == "__main__":
 
     enable_rviz = rp.get_param("/enable_rviz", False)
 
-    user = 'cnovak'
-    loc_pkg = '/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection'
-    dataset = 'validation_0000'
+    user = 'amy'
+    loc_pkg = '/home/amy/test_ws/src/ml_person_detection'
+    dataset = 'training_0000'
 
     args_default = {
-        'dir_load' : '/home/%s/Data/waymo-od/%s' % (user, dataset),
-        'dir_log' : '%s/logs' % loc_pkg,
-        'dir_save' : '%s/data/%s' % (loc_pkg, dataset),
+        'dir_load' : '/home/%s/test_ws/src/waymo-od/data' % (user),
+        'dir_log' : '/home/%s/test_ws/src/waymo-od/logs' % (user),
+        'dir_save' : '/home/%s/test_ws/src/waymo-od/save' % (user),
         'verbosity' : logging.DEBUG,
-        'visualize' : 1
+        'visualize' : 2
     }
 
     if enable_rviz:
@@ -340,7 +421,7 @@ if __name__ == "__main__":
             dir_load=dir_load, dir_save=dir_save, dir_log=dir_log,
             verbosity=verbosity, visualize=visualize)
 
-    else: 
+    else:
         dir_load = args_default['dir_load']
         dir_log = args_default['dir_log']
         dir_save = args_default['dir_save']
@@ -350,7 +431,7 @@ if __name__ == "__main__":
         creator = DatasetCreator(
             dir_load=dir_load, dir_save=dir_save, dir_log=dir_log,
             verbosity=verbosity)
-    
+
     creator.logger.info("enable_rviz = %s" % enable_rviz)
 
     file_list = glob.glob('%s/*.tfrecord' % dir_load)
