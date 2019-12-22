@@ -11,19 +11,29 @@ from scipy.spatial import ConvexHull, convex_hull_plot_2d
 from scipy.signal import resample
 import matplotlib.pyplot as plt
 
+#TODO Move constants to constants.py file
 GROUND_THRESHOLD = 0.1  # meters
 MAX_CLUSTER_PTS = 200 # max number of points in a cluster
 
 def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
-    """Remove points below z-threshold and return pcl.
+    """Remove points below z-threshold inclusive and return pcl.
+
+    Assumes pcl rows are [x, y, z, intensity]
 
     Args:
         pcl: (n * 4) numpy array of xyz points and intensities
+        z_thresh: optional int|float threshold on z-axis
 
     Returns:
-        pcl_out: (n * 4) numpy array of xyz points and intensities without
-            points below a certain z value
+        pcl_out: pcl without points with z-values below or equal to threshold
     """
+    if type(z_thresh) not in [int, float]:
+        raise TypeError('received z_thresh arg of type %s' % type(z_thresh))
+    if type(pcl) is not np.ndarray:
+        raise TypeError('received pcl arg of type %s' % type(pcl))
+    if pcl.shape[1] < 3:
+        raise ValueError('pcl ndarray has too few rows')
+
     return pcl[pcl[:,2] > z_thresh]
 
 def extract_cluster_parameters(cluster, display=False):
@@ -74,25 +84,40 @@ def extract_cluster_parameters(cluster, display=False):
               max_intensity, mean_intensity, var_intensity]
     return output
 
-def compute_volume(points, display=False):
-    """Approximate 3D volume of bounding box by computing 2d convex hull in x-y
-    plane then multiplying hull area by height
-    """
+def compute_volume(pcl, display=False):
+    """Compute volume feature of pcl.
+    
+    Assumes pcl rows are [x, y, z, intensity]
+    Uses volume attribute of ConvexHull as area due to stackoverflow post:
+        https://stackoverflow.com/q/35664675
+    Calculate approximate 3D volume of pcl with following steps:
+        - Create convexhull encompassing pts in xy-plane
+        - Multiply hull area by diff btw min-z and max-z points
 
-    pts_xy = points[:,[0,1]] # Get x-y points
-    pts_z = points[:,[2]] # Get z points
+    Args:
+        pcl: (n * 3+) numpy array of xyz points and other information
+        display: boolean for visualizing convexhull with pyplot
+
+    """
+    if type(pcl) is not np.ndarray:
+        raise TypeError('received pcl arg of type %s' % type(pcl))
+    if pcl.shape[1] < 3:
+        raise ValueError('pcl ndarray has too few rows')
+
+    pts_xy = pcl[:, [0,1]].astype(float)
+    pts_z = pcl[:, [2]].astype(float)
     hull = ConvexHull(pts_xy)
-    area = hull.area
+    area = hull.volume  # See docstring notes 
     height = pts_z.max() - pts_z.min()
-    volume = area*height
+    volume = area * height
 
     if display:
-        plt.plot(points[:,0], points[:,1], 'o')
+        plt.plot(pcl[:,0], pcl[:, 1], 'bo')
         for simplex in hull.simplices:
-            plt.plot(points[simplex, 0], points[simplex, 1], 'k-')
+            plt.plot(pcl[simplex, 0], pcl[simplex, 1], 'k-')
 
-        plt.plot(points[hull.vertices,0], points[hull.vertices,1], 'r--', lw=2)
-        plt.plot(points[hull.vertices[0],0], points[hull.vertices[0],1], 'ro')
+        plt.plot(pcl[hull.vertices, 0], pcl[hull.vertices,1], 'r--', lw=2)
+        plt.plot(pcl[hull.vertices, 0], pcl[hull.vertices, 1], 'ro')
         plt.show()
 
     return volume
