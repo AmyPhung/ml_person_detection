@@ -2,6 +2,7 @@ import unittest
 import json
 import numpy as np
 from scripts.modules.helperFunctions import *
+from waymo_open_dataset.label_pb2 import Label
 
 class testRemoveGroundplane(unittest.TestCase):
     """Define and test interface for remove_groundplane."""
@@ -131,6 +132,103 @@ class testComputeVolume(unittest.TestCase):
         self.assertTrue(
             np.abs(act_vol - vol) < 0.0001,
             "function found %s pcl volume, not %s." % (vol, act_vol))
+
+
+class testGetPtsInBBox(unittest.TestCase):
+    """Define and test interface for get_pts_in_bbox."""
+    def setUp(self):
+        """Create pcls and bboxes for testing."""
+        size = 5
+        self.pcl_array = np.asarray([[i, j, k]
+            for i in range(size) for j in range(size) for k in range(size)])
+
+    def testBadArgs(self):    
+        """Test supplying function with bad arguments."""
+
+        label = Label()
+        label.box.heading = 0
+        label.box.center_x = label.box.center_y = label.box.center_z = 10
+        label.box.height = label.box.length = label.box.width = 1
+        pcl_list = [[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 3, 3]]
+        label_list = {
+            'center_x': 0, 'center_y': 0, 'center_z': 0,
+            'height': 1, 'length': 1, 'width': 1, 'heading': 0}
+
+        with self.assertRaises(
+                TypeError, msg="function accepted nested list for bbox."):
+            get_pts_in_bbox(self.pcl_array, label_list)
+
+        with self.assertRaises(
+                TypeError, msg="function accepted nested list for pcl."):
+            get_pts_in_bbox(pcl_list, label)
+
+        with self.assertRaises(
+                TypeError, msg="function ran without args."):
+            get_pts_in_bbox()
+
+        with self.assertRaises(
+                TypeError, msg="function ran with args swapped."):
+            get_pts_in_bbox(label, self.pcl_array)
+
+        with self.assertRaises(
+                ValueError, msg="function accepted ndarray with 2 rows."):
+            get_pts_in_bbox(self.pcl_array[:, 0:1], label)
+
+    def testBoxOutsidePcl(self):
+        """Test bbox outside entire pcl."""
+        label = Label()
+        label.box.heading = 0
+        label.box.center_x = label.box.center_y = label.box.center_z = 10
+        label.box.height = label.box.length = label.box.width = 1
+        self.assertTrue(
+            len(get_pts_in_bbox(self.pcl_array, label)) == 0,
+            "function found unexpected pts in bbox.")
+
+    def testBoxAlignedWithPcl(self):
+        """Test bbox within pcl, axes aligned."""
+        label = Label()
+        label.box.heading = 0
+        label.box.center_x = label.box.center_y = label.box.center_z = 2 
+        label.box.height = label.box.length = label.box.width = 1
+        act_len = 5
+        pts_len = len(get_pts_in_bbox(self.pcl_array, label))
+        self.assertTrue(
+            act_len == pts_len,
+            "function found %i pts, not %i pts." % (pts_len, act_len))
+
+    def testBox45DegreeWithPcl(self):
+        """Test bbox within pcl, 45 degree axes angle."""
+        label = Label()
+        label.box.heading = 45
+        label.box.center_x = label.box.center_y = label.box.center_z = 2
+        label.box.width = np.sqrt(2)
+        label.box.length = 2 * np.sqrt(2)
+        label.box.height = 1
+        act_len = 7 * 5
+        pts_len = len(get_pts_in_bbox(self.pcl_array, label))
+        self.assertTrue(
+            act_len == pts_len,
+            "function found %i pts, not %i pts." % (pts_len, act_len))
+
+    def testBoxAbovePcl(self):
+        """Test bbox above entire pcl.
+
+        This test demonstrates that the function CURRENTLY does not threshold
+        by z-height, and only does xy-bounding box.
+
+        """
+        label = Label()
+        label.box.heading = 45
+        label.box.center_x = label.box.center_y = 2
+        label.box.center_z = 20
+        label.box.width = np.sqrt(2)
+        label.box.length = 2 * np.sqrt(2)
+        label.box.height = 1
+        act_len = 7 * 5
+        pts_len = len(get_pts_in_bbox(self.pcl_array, label))
+        self.assertTrue(
+            act_len == pts_len,
+            "function found %i pts, not %i pts." % (pts_len, act_len))
 
 
 if __name__ == '__main__':

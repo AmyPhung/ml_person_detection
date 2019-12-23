@@ -6,10 +6,13 @@ This module holds functions that are used in both pipelines:
     extract_pcl_features()
 """
 import pdb
+import waymo_open_dataset.label_pb2  # Imported for typechecking
+
 import numpy as np
-from scipy.spatial import ConvexHull, convex_hull_plot_2d
-from scipy.signal import resample
 import matplotlib.pyplot as plt
+
+from scipy.signal import resample
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
 
 #TODO Move constants to constants.py file
 GROUND_THRESHOLD = 0.1  # meters
@@ -122,41 +125,77 @@ def compute_volume(pcl, display=False):
 
     return volume
 
-def get_pts_in_bbox(pcl, bbox, logger=None):
+def get_pts_in_bbox(pcl, bbox, display=False):
     """Return ndarray of points from pcl within bbox.
 
-    Given pointcloud and bounding box, transforms pointcloud into coordinate
-    frame of bounding box, thresholds by box dimensions, returns points
-    in original coordinate system.
+    Given pointcloud and bounding box: 
+        transforms pcl into bbox coordinate frame (translation & rotation)
+        thresholds pcl by bbox dimensions, inclusive
+        returns thresholded pcl in original coordinate system.
+
+    Todo:
+        add bbox padding arg and functionality.
 
     Args:
-        pcl: n*4 list of 3d points with intensities.
-        bbox: tf bounding box object to check for point collision.
-        logger: optional python logging object to print debug info.
+        pcl: (n * 3+) ndarray 3d points with other information.
+        bbox: tensorflow bounding box object to check for point collision.
 
     """
-    # Get bbox limits in bbox coord frame
-    x_lo = bbox.box.center_x - bbox.box.length/2
-    x_hi = bbox.box.center_x + bbox.box.length/2
-    y_lo = bbox.box.center_y - bbox.box.width/2
-    y_hi = bbox.box.center_y + bbox.box.width/2
-    if logger is not None:
-        logger.debug('bbox limits: %0.2f-%0.2f, %0.2f-%0.2f'
-            % (x_lo, x_hi, y_lo, y_hi))
-    else:
-        print('bbox limits: %0.2f to %0.2f x, %0.2f to %0.2f y'
-            % (x_lo, x_hi, y_lo, y_hi))
+    if type(bbox) is not waymo_open_dataset.label_pb2.Label:
+        raise TypeError('received bbox arg of type %s' % type(bbox))
+    if type(pcl) is not np.ndarray:
+        raise TypeError('received pcl arg of type %s' % type(pcl))
+    if pcl.shape[1] < 3:
+        raise ValueError('pcl ndarray has too few rows')
 
-    # Rotate points by bbox heading angle
+    # Unpack variables for readability
+    x, y, z = bbox.box.center_x, bbox.box.center_y, bbox.box.center_z
+    l, w, h = bbox.box.length, bbox.box.width, bbox.box.height
+
+    # Get bbox limits in bbox coord frame
+    x_lo, x_hi = x - l/2, x + l/2
+    y_lo, y_hi = y - w/2, y + w/2
+
     ang = np.radians(bbox.box.heading)
     r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
-    r_pcl = np.matmul(pcl[:, 0:2], r_mat)
+
+    if display:  # Before translation - rotation
+        points = np.matmul(np.asarray(
+            [[-l/2, -w/2], [-l/2, w/2], [l/2, -w/2], [l/2, w/2],
+            [0, 0]]), r_mat) + np.asarray([x, y])
+        plt.plot(points[:, 0], points[:, 1], 'bo')
+        plt.plot(pcl[:, 0], pcl[:, 1], 'ro')
+        plt.show()
+
+    t_mat = np.asarray([[x, y, z] for n in range(pcl.shape[0])])
+    t_pcl = pcl[:, 0:3] - t_mat
+    x, y, z = 0, 0, 0
+    x_lo, x_hi, y_lo, y_hi = -l/2, l/2, -w/2, w/2
+    r_pcl = np.matmul(t_pcl[:, 0:2], r_mat.T)
+
+    if display:  # After translation - rotation
+        points = np.asarray(
+            [[-l/2, -w/2], [-l/2, w/2], [l/2, -w/2], [l/2, w/2],
+            [x, y]])
+        plt.plot(points[:, 0], points[:, 1], 'bo')
+        plt.plot(r_pcl[:, 0], r_pcl[:, 1], 'ro')
+        plt.show()
 
     # Sub-select pcl by bbox limits
     indxs = np.where(
-        (x_lo < r_pcl[:, 0]) & (r_pcl[:, 0] < x_hi)
-        & (y_lo < r_pcl[:, 1]) & (r_pcl[:, 1] < y_hi))[0]
+        (x_lo <= r_pcl[:, 0]) & (r_pcl[:, 0] <= x_hi)
+        & (y_lo <= r_pcl[:, 1]) & (r_pcl[:, 1] <= y_hi))[0]
     pcl_out = pcl[indxs].astype('float64')
+
+    if display:  # After point selection
+        points = np.matmul(np.asarray(
+            [[-l/2, -w/2], [-l/2, w/2], [l/2, -w/2], [l/2, w/2],
+            [0, 0]]), r_mat) + np.asarray([x, y])
+        plt.plot(points[:, 0], points[:, 1], 'bo')
+        plt.plot(pcl[:, 0], pcl[:, 1], 'ro')
+        plt.plot(pcl_out[:, 0], pcl_out[:, 1], 'go')
+        plt.show()
+
     return pcl_out
 
 
