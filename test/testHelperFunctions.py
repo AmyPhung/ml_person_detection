@@ -7,6 +7,7 @@ from waymo_open_dataset.label_pb2 import Label
 class testRemoveGroundplane(unittest.TestCase):
     """Define and test interface for remove_groundplane."""
     def setUp(self):
+        """Create pcl for testing."""
         self.pointcount = 11  # Use odd numbers to center around 0
         self.pcl = np.zeros((self.pointcount, 4))
         for p in range(self.pcl.shape[0]):
@@ -231,5 +232,82 @@ class testGetPtsInBBox(unittest.TestCase):
             "function found %i pts, not %i pts." % (pts_len, act_len))
 
 
+class testExtractClusterParameters(unittest.TestCase):
+    """Define and test interface for extract_cluster_parameters."""
+    def setUp(self):
+        """Create cluster for testing."""
+        size = 5
+
+        self.cluster_list = [[i, j, k, 0]
+            for i in range(size) for j in range(size) for k in range(size)]
+        self.cluster_array = np.asarray(self.cluster_list)
+
+        self.cluster2_array = np.asarray([[i, 2 * j, 3 * k, k]
+            for i in range(size) for j in range(size) for k in range(size)])
+
+    def testBadArgs(self):
+        """Test supplying function with bad arguments."""
+        with self.assertRaises(
+                TypeError, msg="function accepted nested list for pcl."):
+            extract_cluster_parameters(self.cluster_list)
+
+        with self.assertRaises(
+                TypeError, msg="function ran without args."):
+            extract_cluster_parameters()
+
+        with self.assertRaises(
+                ValueError, msg="function accepted ndarray with 2 rows."):
+            extract_cluster_parameters(self.cluster_array[:, 0:1])
+
+    def testCubeNoIntensityCluster(self):
+        """Test 4 x 4 x 4 cube of points with zero intensity as cluster."""
+        param = extract_cluster_parameters(self.cluster_array)
+        self.assertTrue(
+            param[0] == 2, "Expected x 2, received %s" % param[0])
+        self.assertTrue(
+            param[1] == 2, "Expected y 2, received %s" % param[1])
+        self.assertTrue(
+            param[2] == 2, "Expected z 2, received %s" % param[2])
+        self.assertTrue(
+            param[3] == param[4] == param[5],
+            "Expected e_x = e_y = e_z, found e_x %s, e_y %s, e_z %s"
+            % (param[3], param[4], param[5]))
+        self.assertTrue(
+            param[6] == 64, "Expected vol-param 54, received %s" % param[6])
+        self.assertTrue(
+            np.abs(param[7] - 1.95312) < 0.00001,
+            "Expected density-param 1.953, received %s" % param[7])
+        self.assertTrue(
+            param[8] == 0, "Expected max_intensity 0, received %s" % param[8])
+        self.assertTrue(
+            param[9] == 0, "Expected mean_intensity 0, received %s" % param[9])
+        self.assertTrue(
+            param[10] == 0, "Expected var_intensity 0, got %s" % param[10])
+
+    def testRectangularPrismIntensityCluster(self):
+        """Test 4 x 8 x 12 prism of points with intensity == z as cluster."""
+        param = extract_cluster_parameters(self.cluster2_array)
+        self.assertTrue(
+            param[0] == 2, "Expected x 2, received %s" % param[0])
+        self.assertTrue(
+            param[1] == 4, "Expected y 4, received %s" % param[1])
+        self.assertTrue(
+            param[2] == 6, "Expected z 6, received %s" % param[2])
+        self.assertTrue(
+            param[3] == param[4]/2**2 == param[5]/3**2,
+            "Expected e_x = e_y/4 = e_z/9, found e_x %s, e_y %s, e_z %s"
+            % (param[3], param[4], param[5]))
+        self.assertTrue(
+            param[6] == 384, "Expected vol-param 384, received %s" % param[6])
+        self.assertTrue(
+            np.abs(param[7] - 0.32552) < 0.00001,
+            "Expected density-param 0.32552, received %s" % param[7])
+        self.assertTrue(
+            param[8] == 4, "Expected max_intensity 4, received %s" % param[8])
+        self.assertTrue(
+            param[9] == 2, "Expected mean_intensity 2, received %s" % param[9])
+        self.assertTrue(
+            param[10] == 2, "Expected var_intensity 2, got %s" % param[10])
+    
 if __name__ == '__main__':
-    unittest.main()
+    nittest.main()

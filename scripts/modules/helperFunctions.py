@@ -40,8 +40,7 @@ def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
     return pcl[pcl[:,2] > z_thresh]
 
 def extract_cluster_parameters(cluster, display=False):
-    """Calculate features for net training from pcl, return PclFeatures object
-    containing all features.
+    """Calculate features for net training from pcl
 
     Args:
         cluster: ndarray (n * 4) of cluster points and intensities.
@@ -60,6 +59,11 @@ def extract_cluster_parameters(cluster, display=False):
             mean_intensity = average intensity in cluster
             var_intensity = variance of intensity in cluster
     """
+    if type(cluster) is not np.ndarray:
+        raise TypeError('received cluster arg of type %s' % type(cluster))
+    if cluster.shape[1] < 4:
+        raise ValueError('cluster ndarray has too few rows')
+
     # Average x, y, and z to get COM of cluster
     x = np.mean(cluster[:,0])
     y = np.mean(cluster[:,1])
@@ -135,6 +139,7 @@ def get_pts_in_bbox(pcl, bbox, display=False):
 
     Todo:
         add bbox padding arg and functionality.
+        add bbox z-axis analysis functionality.
 
     Args:
         pcl: (n * 3+) ndarray 3d points with other information.
