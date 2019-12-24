@@ -191,9 +191,22 @@ class testGetPtsInBBox(unittest.TestCase):
         label.box.heading = 0
         label.box.center_x = label.box.center_y = label.box.center_z = 2 
         label.box.length = label.box.width = 1
-        label.box.height = 5
-        act_len = 5
+        label.box.height = 3
+        act_len = 3
         pts_len = len(get_pts_in_bbox(self.pcl_array, label))
+        self.assertTrue(
+            act_len == pts_len,
+            "function found %i pts, not %i pts." % (pts_len, act_len))
+
+    def testBoxAlignedWithPclPadding(self):
+        """Test bbox within pcl, axes aligned, with padding."""
+        label = Label()
+        label.box.heading = 0
+        label.box.center_x = label.box.center_y = label.box.center_z = 2 
+        label.box.length = label.box.width = 1
+        label.box.height = 3
+        act_len = 45
+        pts_len = len(get_pts_in_bbox(self.pcl_array, label, padding=(1, 1, 1)))
         self.assertTrue(
             act_len == pts_len,
             "function found %i pts, not %i pts." % (pts_len, act_len))

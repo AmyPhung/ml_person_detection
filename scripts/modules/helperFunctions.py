@@ -128,7 +128,7 @@ def compute_volume(pcl, display=False):
 
     return volume
 
-def get_pts_in_bbox(pcl, bbox, display=False):
+def get_pts_in_bbox(pcl, bbox, display=False, padding=(0, 0, 0)):
     """Return ndarray of points from pcl within bbox.
 
     Given pointcloud and bounding box: 
@@ -142,6 +142,9 @@ def get_pts_in_bbox(pcl, bbox, display=False):
     Args:
         pcl: (n * 3+) ndarray 3d points with other information.
         bbox: tensorflow bounding box object to check for point collision.
+        display: bool for displaying transform-rotation with pyplot.
+        padding: 3-component tuple of x, y, and z padding for bbox.
+            (length, width, height)
 
     """
     if type(bbox) is not waymo_open_dataset.label_pb2.Label:
@@ -153,7 +156,9 @@ def get_pts_in_bbox(pcl, bbox, display=False):
 
     # Unpack variables for readability
     x, y, z = bbox.box.center_x, bbox.box.center_y, bbox.box.center_z
-    l, w, h = bbox.box.length, bbox.box.width, bbox.box.height
+    l = bbox.box.length + 2 * padding[0]
+    w = bbox.box.width + 2 * padding[1]
+    h = bbox.box.height + 2 * padding[2]
 
     # Get bbox limits in bbox coord frame
     x_lo, x_hi = x - l/2, x + l/2
