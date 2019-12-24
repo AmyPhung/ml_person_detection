@@ -10,12 +10,13 @@ import waymo_open_dataset.label_pb2  # Imported for typechecking
 import numpy as np
 import matplotlib.pyplot as plt
 
+from constants import *
 from scipy.signal import resample
 from scipy.spatial import ConvexHull, convex_hull_plot_2d
 
 #TODO Move constants to constants.py file
-GROUND_THRESHOLD = 0.1  # meters
-MAX_CLUSTER_PTS = 200 # max number of points in a cluster
+# GROUND_THRESHOLD = 0.1  # meters
+# MAX_CLUSTER_PTS = 200 # max number of points in a cluster
 
 def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
     """Remove points below z-threshold inclusive and return pcl.
