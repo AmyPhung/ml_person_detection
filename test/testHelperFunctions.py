@@ -190,7 +190,8 @@ class testGetPtsInBBox(unittest.TestCase):
         label = Label()
         label.box.heading = 0
         label.box.center_x = label.box.center_y = label.box.center_z = 2 
-        label.box.height = label.box.length = label.box.width = 1
+        label.box.length = label.box.width = 1
+        label.box.height = 5
         act_len = 5
         pts_len = len(get_pts_in_bbox(self.pcl_array, label))
         self.assertTrue(
@@ -205,7 +206,7 @@ class testGetPtsInBBox(unittest.TestCase):
         label.box.width = np.sqrt(2)
         label.box.length = 2 * np.sqrt(2)
         label.box.height = 1
-        act_len = 7 * 5
+        act_len = 7
         pts_len = len(get_pts_in_bbox(self.pcl_array, label))
         self.assertTrue(
             act_len == pts_len,
@@ -225,11 +226,11 @@ class testGetPtsInBBox(unittest.TestCase):
         label.box.width = np.sqrt(2)
         label.box.length = 2 * np.sqrt(2)
         label.box.height = 1
-        act_len = 7 * 5
+        act_len = 0
         pts_len = len(get_pts_in_bbox(self.pcl_array, label))
         self.assertTrue(
             act_len == pts_len,
-            "function found %i pts, not %i pts." % (pts_len, act_len))
+            "function unexpectedly found %i pts." % (pts_len))
 
 
 class testExtractClusterParameters(unittest.TestCase):

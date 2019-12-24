@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 """Module for shared code between waymo pipeline and panasonic pipeline.
 
-This module holds functions that are used in both pipelines:
-    remove_groundplane()
-    extract_pcl_features()
+This module holds functions that are used in both pipelines.
+
 """
 import pdb
 import waymo_open_dataset.label_pb2  # Imported for typechecking
@@ -139,7 +138,6 @@ def get_pts_in_bbox(pcl, bbox, display=False):
 
     Todo:
         add bbox padding arg and functionality.
-        add bbox z-axis analysis functionality.
 
     Args:
         pcl: (n * 3+) ndarray 3d points with other information.
@@ -160,6 +158,7 @@ def get_pts_in_bbox(pcl, bbox, display=False):
     # Get bbox limits in bbox coord frame
     x_lo, x_hi = x - l/2, x + l/2
     y_lo, y_hi = y - w/2, y + w/2
+    z_lo, z_hi = z - h/2, z + h/2
 
     ang = np.radians(bbox.box.heading)
     r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
@@ -175,8 +174,8 @@ def get_pts_in_bbox(pcl, bbox, display=False):
     t_mat = np.asarray([[x, y, z] for n in range(pcl.shape[0])])
     t_pcl = pcl[:, 0:3] - t_mat
     x, y, z = 0, 0, 0
-    x_lo, x_hi, y_lo, y_hi = -l/2, l/2, -w/2, w/2
-    r_pcl = np.matmul(t_pcl[:, 0:2], r_mat.T)
+    x_lo, x_hi, y_lo, y_hi, z_lo, z_hi = -l/2, l/2, -w/2, w/2, -h/2, h/2
+    r_pcl = np.hstack((np.matmul(t_pcl[:, 0:2], r_mat.T), np.expand_dims(t_pcl[:, 2], axis=1)))
 
     if display:  # After translation - rotation
         points = np.asarray(
@@ -188,8 +187,9 @@ def get_pts_in_bbox(pcl, bbox, display=False):
 
     # Sub-select pcl by bbox limits
     indxs = np.where(
-        (x_lo <= r_pcl[:, 0]) & (r_pcl[:, 0] <= x_hi)
-        & (y_lo <= r_pcl[:, 1]) & (r_pcl[:, 1] <= y_hi))[0]
+          (x_lo <= r_pcl[:, 0]) & (r_pcl[:, 0] <= x_hi)
+        & (y_lo <= r_pcl[:, 1]) & (r_pcl[:, 1] <= y_hi)
+        & (z_lo <= r_pcl[:, 2]) & (r_pcl[:, 2] <= z_hi))[0]
     pcl_out = pcl[indxs].astype('float64')
 
     if display:  # After point selection
