@@ -45,7 +45,7 @@ class DatasetCreator(object):
     """
 
     def __init__(
-            self, dir_load, dir_save, logger=None, dir_log=None,
+            self, dir_load, dir_save=None, logger=None, dir_log=None,
             save_data=True, verbosity=None, density_thresh=0):
         """Provide directory location to find frames."""
         self.waymo_converter = Waymo2Numpy()
@@ -218,7 +218,8 @@ class DatasetCreator(object):
 
         # lambda function is used to serialize custom Features object
         with open(filename, 'w') as outfile:
-                metadata, outfile, default=lambda o: o.as_dict(), indent=4)
+                json.dump(
+                    metadata, outfile, default=lambda o: o.as_dict(), indent=4)
 
         self.logger.debug('Exit:saveClusterMetadata')
 
