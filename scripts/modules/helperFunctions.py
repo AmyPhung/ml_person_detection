@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 
 from scipy.signal import resample
 from scipy.spatial import ConvexHull, convex_hull_plot_2d
+import scipy.cluster.hierarchy as hcluster
 
 #TODO Move constants to constants.py file
 GROUND_THRESHOLD = 0.1  # meters
@@ -38,6 +39,129 @@ def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
         raise ValueError('pcl ndarray has too few rows')
 
     return pcl[pcl[:,2] > z_thresh]
+
+def compute_clusters(pcl, thresh=1, grid_dim=[50, 100],
+    grid_cell_size=10):
+    """Group points in pointcloud to form clusters
+
+    Assumes pcl rows are [x, y, z, intensity]
+
+    Args:
+        pcl: (n * 4) numpy array of xyz points and intensities with ground
+            filtered out
+        thresh: number of points per grid cell to be classified as "occupied"
+
+    Returns:
+        clusters: list containing clusters in pointcloud
+    """
+    center_x = grid_dim[0]/2
+    center_y = grid_dim[1]/2
+    xs = np.arange(-center_x, center_x, grid_cell_size)
+    ys = np.arange(-center_y, center_y, grid_cell_size)
+    # print(xs)
+    # print(ys)
+    # occupancy_grid = np.zeros(grid_dim[0]/grid_cell_size[0],
+    #                           grid_dim[1]/grid_cell_size[1])
+    #
+    #
+    # b = np.array(range(SIZE))
+    # X,Y = np.meshgrid(xs,ys)
+    # print(X,Y)
+
+    # occupancy_grid = map(lambda x,y : \
+    #     compute_pts_in_cell(pcl, x, x+grid_cell_size, y, y+grid_cell_size),\
+    #     X, Y)
+    occupancy_grid = [compute_pts_in_cell(pcl, x, x+grid_cell_size,
+                      y, y+grid_cell_size) \
+                      for x in xs for y in ys]
+    #
+    # (x, y) for x in [1,2,3] for y in [3,1,4] if x != y]
+    # for x in xs:
+    #     for y in ys:
+    #     print(x,y)
+    # test = map(add, X, Y)
+
+    # print(np.array)
+    # rst = map(lambda x,y : compute_pts_in_cell(pcl, x, x+grid_cell_size, \
+    #     y, y+grid_cell_size) , X, Y)
+    #
+    # print(np.array(occupancy_grid))
+    # return np.array(rst)
+    #
+# def compute_pts_per_row():
+
+def compute_pts_in_cell(pcl, x_min, x_max, y_min, y_max):
+    print("Hereee")
+    print(x_min)
+    print(x_max)
+    print(y_min)
+    print(y_max)
+
+    # print(pcl[:,0].shape)
+    valid_pts = (pcl[:,0] > x_min) & (pcl[:,0] < x_max) & \
+                (pcl[:,1] > y_min) & (pcl[:,1] < y_max)
+    # print(valid_pts)
+    num_pts = np.sum(valid_pts)
+    return num_pts
+
+"""
+Occupancy grid
+grid_dim = [100, 100] # in m
+grid_cell_size = [0.15, 0.15] # in m, make sure evenly divisible
+
+occupancy_grid = np.zeros(grid_dim[0]/grid_cell_size[0], grid_dim[1]/grid_cell_size[1])
+
+for i in range(occupancy_grid.shape[0]):
+    for j in range(occupancy_grid.shape[1]):
+        cell_x_range = []
+        cell_y_range = []
+        # Populate grid with number of points per cell
+
+
+occupancy_grid[i][j] = num_pts(i,j)
+occupancy_grid[lambda x,y num_pts(i,j)]
+
+def num_pts(i,j)
+
+
+occupancy_grid_binary = occupancy_grid[occupancy_grid > threshold]
+
+Conencted components
+n_components, labels = connected_components(csgraph=graph, directed=False, return_labels=True)
+
+clusters = []
+
+for each connected component
+    cluster_pts = []
+    for each cell in connected component
+        get points in cell
+        cluster_pts.append(additional_points)
+    clusters.append(cluster_pts)
+"""
+
+
+    # # Cluster points in 2D - uses hierarchical clustering (https://stackoverflow.com/questions/10136470/unsupervised-clustering-with-unknown-number-of-clusters)
+    # clusters = hcluster.fclusterdata(pcl[:,:2], thresh, criterion="distance")
+    # num_clusters = len(np.unique(clusters))
+    #
+    # # TODO: Include filter for throwing out clusters that are too small
+    # plt.clf()
+    # plt.scatter(*np.transpose(pcl[:,:2]), c=clusters)
+    # plt.axis("equal")
+    # plt.draw()
+    # plt.pause(0.00000000001)
+    #
+    # return clusters
+
+def compute_bounding_box(cluster):
+    """
+    compute eigenvalues of cluster
+    rotate points
+    box is max/min
+    rotate box back
+
+    bounding box data structure
+    """
 
 def extract_cluster_parameters(cluster, display=False):
     """Calculate features for net training from pcl
@@ -93,7 +217,7 @@ def extract_cluster_parameters(cluster, display=False):
 
 def compute_volume(pcl, display=False):
     """Compute volume feature of pcl.
-    
+
     Assumes pcl rows are [x, y, z, intensity]
     Uses volume attribute of ConvexHull as area due to stackoverflow post:
         https://stackoverflow.com/q/35664675
@@ -114,7 +238,7 @@ def compute_volume(pcl, display=False):
     pts_xy = pcl[:, [0,1]].astype(float)
     pts_z = pcl[:, [2]].astype(float)
     hull = ConvexHull(pts_xy)
-    area = hull.volume  # See docstring notes 
+    area = hull.volume  # See docstring notes
     height = pts_z.max() - pts_z.min()
     volume = area * height
 
@@ -132,7 +256,7 @@ def compute_volume(pcl, display=False):
 def get_pts_in_bbox(pcl, bbox, display=False):
     """Return ndarray of points from pcl within bbox.
 
-    Given pointcloud and bounding box: 
+    Given pointcloud and bounding box:
         transforms pcl into bbox coordinate frame (translation & rotation)
         thresholds pcl by bbox dimensions, inclusive
         returns thresholded pcl in original coordinate system.

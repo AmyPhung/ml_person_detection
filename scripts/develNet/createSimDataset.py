@@ -24,6 +24,7 @@ class SimDatasetCreator(object):
 
         self.tf_pcl_msg = None # Pointcloud message in base_link frame
         self.pcl_np_filtered = None # Pointcloud in numpy form with groundplane removed
+        self.clusters = None # List containing clusters in Pointcloud
         self.pcl_np = None
         self.tf_pcl_np = None
 
@@ -62,6 +63,9 @@ class SimDatasetCreator(object):
         # Remove groundplane from data
         self.pcl_np_filtered = remove_groundplane(self.pcl_np)
 
+        # Cluster data
+        self.clusters = compute_clusters(self.pcl_np_filtered, thresh=0.001)
+
 
     def visualizeOutput(self):
         """Publishes data to visualize different stages of the dataset based
@@ -69,7 +73,8 @@ class SimDatasetCreator(object):
 
         Visualization Parameters:
             0 = unfiltered, relative to base_link
-            1 = ground plane removed """
+            1 = ground plane removed
+        """
 
         self.visualize = int(
             rospy.get_param("/visualize", self.visualize))
