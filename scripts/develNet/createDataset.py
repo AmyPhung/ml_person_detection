@@ -30,6 +30,7 @@ import tensorflow as tf
 from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import MarkerArray
 
+from modules.constants import *
 from modules.helperFunctions import *
 from modules.waymo2ros import Waymo2Numpy, Waymo2Ros
 
@@ -87,7 +88,8 @@ class DatasetCreator(object):
         """Remove groundplane from pcl."""
         self.logger.debug('Entr:filterPcl')
 
-        pcl_out = remove_groundplane(np.array([list(pt) for pt in pcl]))
+        pcl_out = remove_groundplane(
+            np.array([list(pt) for pt in pcl]), z_thresh=GROUND_THRESHOLD)
         self.logger.debug('Show:pts_removed=%i' % (len(pcl) - len(pcl_out)))
         self.logger.debug('Exit:filterPcl')
         return pcl_out
@@ -115,8 +117,9 @@ class DatasetCreator(object):
         self.logger.debug("bbox initial count: %i" % len(bboxes))
 
         # Get thresholded cluster from each given bbox
+        padding = (PADDING_X, PADDING_Y, PADDING_Z)
         for i, bbox in enumerate(bboxes):
-            cluster = get_pts_in_bbox(pcl, bbox, self.logger)
+            cluster = get_pts_in_bbox(pcl, bbox, padding=padding)
             self.logger.debug(
                 "bbox=%i * %i, class=%i, id=%s, pt_count=%i"
                 % (i, len(bboxes), bbox.type, bbox.id, len(cluster)))
@@ -158,8 +161,7 @@ class DatasetCreator(object):
         features.frame_id = frame_id
         features.cls = bbox.type
         features.cnt = cluster.shape[0]
-        features.parameters = extract_cluster_parameters(
-            np_cluster, display=False)
+        features.parameters = extract_cluster_parameters(np_cluster)
 
         self.logger.debug('Exit:computeClusterMetadata')
         return features
