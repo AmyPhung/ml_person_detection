@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 
 from scipy.signal import resample
 from scipy.spatial import ConvexHull, convex_hull_plot_2d
-import scipy.cluster.hierarchy as hcluster
+# import scipy.cluster.hierarchy as hcluster
+from scipy import ndimage
 
 #TODO Move constants to constants.py file
 GROUND_THRESHOLD = 0.1  # meters
@@ -40,67 +41,52 @@ def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
 
     return pcl[pcl[:,2] > z_thresh]
 
-def compute_clusters(pcl, thresh=1, grid_dim=[50, 100],
+def compute_clusters(pcl, thresh=1, grid_dim=100,
     grid_cell_size=10):
-    """Group points in pointcloud to form clusters
+    """Group points in pointcloud to form clusters using occupancy grid and
+    connected components
 
     Assumes pcl rows are [x, y, z, intensity]
 
     Args:
         pcl: (n * 4) numpy array of xyz points and intensities with ground
             filtered out
-        thresh: number of points per grid cell to be classified as "occupied"
+        thresh: (int) number of points per grid cell to be classified as "occupied"
+        grid_dim: (x, y) size of grid in meters
+        grid_cell_size: size of grid square in meters
 
     Returns:
         clusters: list containing clusters in pointcloud
     """
-    center_x = grid_dim[0]/2
-    center_y = grid_dim[1]/2
-    xs = np.arange(-center_x, center_x, grid_cell_size)
-    ys = np.arange(-center_y, center_y, grid_cell_size)
-    # print(xs)
-    # print(ys)
-    # occupancy_grid = np.zeros(grid_dim[0]/grid_cell_size[0],
-    #                           grid_dim[1]/grid_cell_size[1])
-    #
-    #
-    # b = np.array(range(SIZE))
-    # X,Y = np.meshgrid(xs,ys)
-    # print(X,Y)
+    # Compute binary occupancy grid
+    center = grid_dim/2
+    xs = np.arange(-center, center, grid_cell_size)
+    ys = np.arange(-center, center, grid_cell_size)
 
-    # occupancy_grid = map(lambda x,y : \
-    #     compute_pts_in_cell(pcl, x, x+grid_cell_size, y, y+grid_cell_size),\
-    #     X, Y)
-    occupancy_grid = [compute_pts_in_cell(pcl, x, x+grid_cell_size,
-                      y, y+grid_cell_size) \
-                      for x in xs for y in ys]
-    #
-    # (x, y) for x in [1,2,3] for y in [3,1,4] if x != y]
-    # for x in xs:
-    #     for y in ys:
-    #     print(x,y)
-    # test = map(add, X, Y)
+    occupancy_grid = np.array([compute_pts_in_cell(pcl, x, x+grid_cell_size,
+                               y, y+grid_cell_size) \
+                               for y in ys for x in xs])
+    occupancy_grid = np.reshape(occupancy_grid, [len(ys), len(xs)])
 
-    # print(np.array)
-    # rst = map(lambda x,y : compute_pts_in_cell(pcl, x, x+grid_cell_size, \
-    #     y, y+grid_cell_size) , X, Y)
-    #
-    # print(np.array(occupancy_grid))
-    # return np.array(rst)
-    #
-# def compute_pts_per_row():
+    occupancy_grid_binary = occupancy_grid > thresh
+    occupancy_grid_binary = occupancy_grid_binary.astype(int)
+    print(occupancy_grid_binary)
+
+    # Compute connected components
+    labels, nb = ndimage.label(occupancy_grid_binary)
+
+    plt.clf()
+    plt.imshow(labels)
+    plt.title('label')
+    plt.axis('off')
+
+    plt.subplots_adjust(wspace=.05, left=.01, bottom=.01, right=.99, top=.9)
+    plt.draw()
+    plt.pause(0.00000000001)
 
 def compute_pts_in_cell(pcl, x_min, x_max, y_min, y_max):
-    print("Hereee")
-    print(x_min)
-    print(x_max)
-    print(y_min)
-    print(y_max)
-
-    # print(pcl[:,0].shape)
     valid_pts = (pcl[:,0] > x_min) & (pcl[:,0] < x_max) & \
                 (pcl[:,1] > y_min) & (pcl[:,1] < y_max)
-    # print(valid_pts)
     num_pts = np.sum(valid_pts)
     return num_pts
 
