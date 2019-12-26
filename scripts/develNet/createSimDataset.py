@@ -23,15 +23,13 @@ class SimDatasetCreator(object):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self.tf_pcl_msg = None # Pointcloud message in base_link frame
+        self.pcl_np_filtered = None # Pointcloud in numpy form with groundplane removed
         self.pcl_np = None
         self.tf_pcl_np = None
 
         # For Visualization
         self.verification_pub = rospy.Publisher("tf_points_verificaton",
             PointCloud2, queue_size=1)
-        # Visualization Parameters:
-        # 0 = unfiltered, relative to base_link
-        # 1 = ground plane removed
         self.visualize = rospy.get_param('/visualize', 0)
 
 
@@ -52,22 +50,60 @@ class SimDatasetCreator(object):
 
     def parsePCL(self):
 
-        # # Convert to numpy array
-        # pc = ros_numpy.numpify(self.tf_pcl_msg)
-        # self.pcl_np=np.zeros((pc.shape[0],3))
-        # self.pcl_np[:,0]=pc['x']
-        # self.pcl_np[:,1]=pc['y']
-        # self.pcl_np[:,2]=pc['z']
-        # print(self.pcl_np.shape)
-        #
-        # # Remove groundplane from data
-        # pcl_out = remove_groundplane(np.array([list(pt) for pt in pcl]))
+        # Convert to numpy array
+        pc = ros_numpy.numpify(self.tf_pcl_msg)
+        self.pcl_np=np.zeros((pc.shape[0],4))
+        self.pcl_np[:,0]=pc['x']
+        self.pcl_np[:,1]=pc['y']
+        self.pcl_np[:,2]=pc['z']
+        self.pcl_np[:,3]=pc['intensity']
+        print(self.pcl_np.shape)
+
+        # Remove groundplane from data
+        self.pcl_np_filtered = remove_groundplane(self.pcl_np)
+
+
+    def visualizeOutput(self):
+        """Publishes data to visualize different stages of the dataset based
+        on the ROS param /visualize
+
+        Visualization Parameters:
+            0 = unfiltered, relative to base_link
+            1 = ground plane removed """
 
         self.visualize = int(
             rospy.get_param("/visualize", self.visualize))
 
         if self.visualize == 0: # Publish unfiltered data in base_link frame
             self.verification_pub.publish(self.tf_pcl_msg)
+
+        if self.visualize == 1: # Publish ground-filtered data in base_link frame
+            self.verification_pub.publish(self.np2msg(self.pcl_np_filtered))
+
+
+    def np2msg(self, points):
+        """Convert numpy array of points into ros PointCloud2 msg.
+
+        Args:
+            points: numpy (x * 3) array of xyz points or numpy (n * 4) array of
+                xyz points and intensities
+
+        Returns:
+            ROS PointCloud2 msg with points and frame_id
+        """
+
+        data = np.zeros(points.shape[0], dtype=[
+          ('x', np.float32),
+          ('y', np.float32),
+          ('z', np.float32),
+        ])
+        data['x'] = points[:, 0]
+        data['y'] = points[:, 1]
+        data['z'] = points[:, 2]
+
+        return ros_numpy.msgify(
+            PointCloud2, data, stamp=None, frame_id='base_link')
+
 
     def run(self):
         while not rospy.is_shutdown():
@@ -80,6 +116,7 @@ class SimDatasetCreator(object):
                 continue
 
             self.parsePCL()
+            self.visualizeOutput()
             self.update_rate.sleep()
 
 if __name__ == "__main__":

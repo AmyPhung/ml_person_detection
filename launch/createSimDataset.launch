@@ -5,7 +5,7 @@
     args="-d $(find ml_person_detection)/rviz/createSimDataset.rviz"/>
 
   <!-- <param name="/enable_rviz" type="bool" value="True" /> -->
-  <param name="/visualize" type="int" value="0" />
+  <param name="/visualize" type="int" value="1" />
   <!-- <param name="/density_thresh" type="int" value="10" /> -->
   <node name="createSimDataset" pkg="ml_person_detection"
     type="createSimDataset.py" output="screen"/>
