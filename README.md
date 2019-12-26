@@ -10,6 +10,8 @@
 7. `cd your_catkin_ws/src`
 8. `git clone https://github.com/AmyPhung/ml_person_detection`
 9. `catkin_make`
+10. `cd your_catkin_ws/src/`
+11. `pip install ml_person_detection/`
 
 ### Helpful Scripts
 + To make a dataset, run `python createDataset.py`
