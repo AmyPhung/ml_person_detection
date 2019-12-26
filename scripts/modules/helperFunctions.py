@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 """Module for shared code between waymo pipeline and panasonic pipeline.
 
 This module holds functions that are used in both pipelines.
@@ -14,11 +14,7 @@ from constants import *
 from scipy.signal import resample
 from scipy.spatial import ConvexHull, convex_hull_plot_2d
 
-#TODO Move constants to constants.py file
-# GROUND_THRESHOLD = 0.1  # meters
-# MAX_CLUSTER_PTS = 200 # max number of points in a cluster
-
-def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
+def remove_groundplane(pcl, z_thresh=0):
     """Remove points below z-threshold inclusive and return pcl.
 
     Assumes pcl rows are [x, y, z, intensity]
@@ -154,6 +150,8 @@ def get_pts_in_bbox(pcl, bbox, display=False, padding=(0, 0, 0)):
         raise TypeError('received pcl arg of type %s' % type(pcl))
     if pcl.shape[1] < 3:
         raise ValueError('pcl ndarray has too few rows')
+    if bbox.box.heading > 2*np.pi:
+        raise ValueError('bounding box heading > 2*pi, should be in radians.')
 
     # Unpack variables for readability
     x, y, z = bbox.box.center_x, bbox.box.center_y, bbox.box.center_z
@@ -166,7 +164,7 @@ def get_pts_in_bbox(pcl, bbox, display=False, padding=(0, 0, 0)):
     y_lo, y_hi = y - w/2, y + w/2
     z_lo, z_hi = z - h/2, z + h/2
 
-    ang = np.radians(bbox.box.heading)
+    ang = bbox.box.heading  # Assumes heading is already in radians
     r_mat = np.array(((np.cos(ang), np.sin(ang)), (-np.sin(ang), np.cos(ang))))
 
     if display:  # Before translation - rotation
@@ -175,13 +173,16 @@ def get_pts_in_bbox(pcl, bbox, display=False, padding=(0, 0, 0)):
             [0, 0]]), r_mat) + np.asarray([x, y])
         plt.plot(points[:, 0], points[:, 1], 'bo')
         plt.plot(pcl[:, 0], pcl[:, 1], 'ro')
+        plt.title('Before translation - rotation')
         plt.show()
 
     t_mat = np.asarray([[x, y, z] for n in range(pcl.shape[0])])
     t_pcl = pcl[:, 0:3] - t_mat
     x, y, z = 0, 0, 0
     x_lo, x_hi, y_lo, y_hi, z_lo, z_hi = -l/2, l/2, -w/2, w/2, -h/2, h/2
-    r_pcl = np.hstack((np.matmul(t_pcl[:, 0:2], r_mat.T), np.expand_dims(t_pcl[:, 2], axis=1)))
+    r_pcl = np.hstack((
+        np.matmul(t_pcl[:, 0:2], r_mat.T),
+        np.expand_dims(t_pcl[:, 2], axis=1)))
 
     if display:  # After translation - rotation
         points = np.asarray(
@@ -189,6 +190,7 @@ def get_pts_in_bbox(pcl, bbox, display=False, padding=(0, 0, 0)):
             [x, y]])
         plt.plot(points[:, 0], points[:, 1], 'bo')
         plt.plot(r_pcl[:, 0], r_pcl[:, 1], 'ro')
+        plt.title('After translation - rotation')
         plt.show()
 
     # Sub-select pcl by bbox limits
@@ -199,12 +201,14 @@ def get_pts_in_bbox(pcl, bbox, display=False, padding=(0, 0, 0)):
     pcl_out = pcl[indxs].astype('float64')
 
     if display:  # After point selection
+        x, y, z = bbox.box.center_x, bbox.box.center_y, bbox.box.center_z
         points = np.matmul(np.asarray(
             [[-l/2, -w/2], [-l/2, w/2], [l/2, -w/2], [l/2, w/2],
             [0, 0]]), r_mat) + np.asarray([x, y])
         plt.plot(points[:, 0], points[:, 1], 'bo')
         plt.plot(pcl[:, 0], pcl[:, 1], 'ro')
         plt.plot(pcl_out[:, 0], pcl_out[:, 1], 'go')
+        plt.title('After translation - rotation')
         plt.show()
 
     return pcl_out

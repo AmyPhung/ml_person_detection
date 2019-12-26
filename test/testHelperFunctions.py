@@ -147,7 +147,7 @@ class testGetPtsInBBox(unittest.TestCase):
         """Test supplying function with bad arguments."""
 
         label = Label()
-        label.box.heading = 0
+        label.box.heading = np.radians(0)
         label.box.center_x = label.box.center_y = label.box.center_z = 10
         label.box.height = label.box.length = label.box.width = 1
         pcl_list = [[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 3, 3]]
@@ -175,6 +175,11 @@ class testGetPtsInBBox(unittest.TestCase):
                 ValueError, msg="function accepted ndarray with 2 rows."):
             get_pts_in_bbox(self.pcl_array[:, 0:1], label)
 
+        label.box.heading = 45
+        with self.assertRaises(
+                ValueError, msg="function accepted label w/ degree heading."):
+            get_pts_in_bbox(self.pcl_array, label)
+
     def testBoxOutsidePcl(self):
         """Test bbox outside entire pcl."""
         label = Label()
@@ -201,7 +206,7 @@ class testGetPtsInBBox(unittest.TestCase):
     def testBoxAlignedWithPclPadding(self):
         """Test bbox within pcl, axes aligned, with padding."""
         label = Label()
-        label.box.heading = 0
+        label.box.heading = np.radians(0)
         label.box.center_x = label.box.center_y = label.box.center_z = 2 
         label.box.length = label.box.width = 1
         label.box.height = 3
@@ -214,12 +219,26 @@ class testGetPtsInBBox(unittest.TestCase):
     def testBox45DegreeWithPcl(self):
         """Test bbox within pcl, 45 degree axes angle."""
         label = Label()
-        label.box.heading = 45
+        label.box.heading = np.radians(45)
         label.box.center_x = label.box.center_y = label.box.center_z = 2
         label.box.width = np.sqrt(2)
         label.box.length = 2 * np.sqrt(2)
         label.box.height = 1
         act_len = 7
+        pts_len = len(get_pts_in_bbox(self.pcl_array, label))
+        self.assertTrue(
+            act_len == pts_len,
+            "function found %i pts, not %i pts." % (pts_len, act_len))
+
+    def testBox340DegreeWithPcl(self):
+        """Test bbox within pcl, 340 degree axes angle."""
+        label = Label()
+        label.box.heading = np.radians(340)
+        label.box.center_x = label.box.center_y = label.box.center_z = 2
+        label.box.width = np.sqrt(2)
+        label.box.length = 2 * np.sqrt(2)
+        label.box.height = 1
+        act_len = 5
         pts_len = len(get_pts_in_bbox(self.pcl_array, label))
         self.assertTrue(
             act_len == pts_len,
@@ -233,7 +252,7 @@ class testGetPtsInBBox(unittest.TestCase):
 
         """
         label = Label()
-        label.box.heading = 45
+        label.box.heading = np.radians(45)
         label.box.center_x = label.box.center_y = 2
         label.box.center_z = 20
         label.box.width = np.sqrt(2)
