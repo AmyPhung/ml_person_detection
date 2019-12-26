@@ -21,6 +21,10 @@ class SimDatasetCreator(object):
         self.pcl_np = None
         self.tf_pcl_np = None
 
+        # FOR VERIFICATION PURPOSES ONLY
+        self.verification_pub = rospy.Publisher("tf_points_verificaton",
+            PointCloud2, queue_size=1)
+
     def pclCB(self, msg):
         """Transform pointcloud into base_link frame and convert to numpy
         array"""
@@ -44,7 +48,11 @@ class SimDatasetCreator(object):
         self.pcl_np[:,1]=pc['y']
         self.pcl_np[:,2]=pc['z']
         print(self.pcl_np.shape)
-        
+
+        # FOR VERIFICATION PURPOSES ONLY
+        print(cloud_out.header.frame_id)
+        self.verification_pub.publish(cloud_out)
+
     def run(self):
         while not rospy.is_shutdown():
             self.update_rate.sleep()
