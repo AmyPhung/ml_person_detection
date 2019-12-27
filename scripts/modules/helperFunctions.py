@@ -41,8 +41,8 @@ def remove_groundplane(pcl, z_thresh=GROUND_THRESHOLD):
 
     return pcl[pcl[:,2] > z_thresh]
 
-def compute_clusters(pcl, thresh=1, grid_dim=100,
-    grid_cell_size=10):
+def compute_clusters(pcl, thresh=10, grid_dim=20,
+    grid_cell_size=0.3):
     """Group points in pointcloud to form clusters using occupancy grid and
     connected components
 
@@ -57,24 +57,27 @@ def compute_clusters(pcl, thresh=1, grid_dim=100,
 
     Returns:
         clusters: list containing clusters in pointcloud
+
+    TODO: Optimize this function - find a way to remove for loop
     """
     # Compute binary occupancy grid
     center = grid_dim/2
     xs = np.arange(-center, center, grid_cell_size)
     ys = np.arange(-center, center, grid_cell_size)
 
-    occupancy_grid = np.array([compute_pts_in_cell(pcl, x, x+grid_cell_size,
-                               y, y+grid_cell_size) \
+    occupancy_grid = np.array([np.sum(compute_pts_in_cell(pcl, x, x+grid_cell_size,
+                               y, y+grid_cell_size)) \
                                for y in ys for x in xs])
     occupancy_grid = np.reshape(occupancy_grid, [len(ys), len(xs)])
 
     occupancy_grid_binary = occupancy_grid > thresh
     occupancy_grid_binary = occupancy_grid_binary.astype(int)
-    print(occupancy_grid_binary)
+    # print(occupancy_grid_binary)
 
     # Compute connected components
     labels, nb = ndimage.label(occupancy_grid_binary)
 
+    # Visualize connected components
     plt.clf()
     plt.imshow(labels)
     plt.title('label')
@@ -84,11 +87,31 @@ def compute_clusters(pcl, thresh=1, grid_dim=100,
     plt.draw()
     plt.pause(0.00000000001)
 
+    # Compute clusters based on connected components
+    clusters = connected_components_to_clusters(pcl, labels, nb, xs, ys,
+                                                grid_cell_size)
+
+    return clusters
+
 def compute_pts_in_cell(pcl, x_min, x_max, y_min, y_max):
     valid_pts = (pcl[:,0] > x_min) & (pcl[:,0] < x_max) & \
                 (pcl[:,1] > y_min) & (pcl[:,1] < y_max)
-    num_pts = np.sum(valid_pts)
-    return num_pts
+    return valid_pts
+
+def connected_components_to_clusters(pcl, labels, nb, xs, ys, grid_cell_size):
+    clusters = {component: np.array([]) for component in range(0, nb+1)}
+
+    for i, x in enumerate(xs):
+        for j, y in enumerate(ys):
+            pts = pcl[compute_pts_in_cell(pcl, x, x+grid_cell_size,
+                                          y, y+grid_cell_size)]
+            clusters[labels[j,i]] = np.append(clusters[labels[j,i]], pts)
+
+    for label in range(nb+1):
+        clusters[label] = clusters[label].reshape(len(clusters[label])/4, 4)
+    return clusters
+
+
 
 """
 Occupancy grid

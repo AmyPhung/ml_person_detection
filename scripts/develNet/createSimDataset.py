@@ -8,6 +8,8 @@ from tf2_sensor_msgs.tf2_sensor_msgs import do_transform_cloud
 import tf2_ros
 import tf2_py as tf2
 
+import random
+
 from modules.helperFunctions import *
 # from models.helperFunctions import *
 # asdffasdfasd
@@ -30,6 +32,8 @@ class SimDatasetCreator(object):
 
         # For Visualization
         self.verification_pub = rospy.Publisher("tf_points_verificaton",
+            PointCloud2, queue_size=1)
+        self.verification_pub2 = rospy.Publisher("tf_points_verificaton2",
             PointCloud2, queue_size=1)
         self.visualize = rospy.get_param('/visualize', 0)
 
@@ -58,13 +62,12 @@ class SimDatasetCreator(object):
         self.pcl_np[:,1]=pc['y']
         self.pcl_np[:,2]=pc['z']
         self.pcl_np[:,3]=pc['intensity']
-        print(self.pcl_np.shape)
 
         # Remove groundplane from data
         self.pcl_np_filtered = remove_groundplane(self.pcl_np)
 
         # Cluster data
-        self.clusters = compute_clusters(self.pcl_np_filtered, thresh=0.001)
+        self.clusters = compute_clusters(self.pcl_np_filtered)
 
 
     def visualizeOutput(self):
@@ -85,26 +88,89 @@ class SimDatasetCreator(object):
         if self.visualize == 1: # Publish ground-filtered data in base_link frame
             self.verification_pub.publish(self.np2msg(self.pcl_np_filtered))
 
+        if self.visualize == 2: # Visualize different clusters
+            color_pcl_np_x = np.array([])
+            color_pcl_np_y = np.array([])
+            color_pcl_np_z = np.array([])
+            color_pcl_np_intensity = np.array([])
+            color_pcl_np_r = np.array([])
+            color_pcl_np_g = np.array([])
+            color_pcl_np_b = np.array([])
+
+            for label in self.clusters:
+                cluster = self.clusters[label]
+                rand_color_arr = np.ones(cluster.shape[0]) * random.random()
+
+                color_pcl_np_x = np.append(color_pcl_np_x, cluster[:,0])
+                color_pcl_np_y = np.append(color_pcl_np_y, cluster[:,1])
+                color_pcl_np_z = np.append(color_pcl_np_z, cluster[:,2])
+                color_pcl_np_intensity = np.append(color_pcl_np_intensity, cluster[:,3])
+                color_pcl_np_r = np.append(color_pcl_np_r, rand_color_arr)
+                color_pcl_np_g = np.append(color_pcl_np_g, rand_color_arr)
+                color_pcl_np_b = np.append(color_pcl_np_b, rand_color_arr)
+
+            color_pcl_np = np.array([color_pcl_np_x,
+                                     color_pcl_np_y,
+                                     color_pcl_np_z,
+                                     color_pcl_np_intensity,
+                                     color_pcl_np_r,
+                                     color_pcl_np_g,
+                                     color_pcl_np_b]).transpose()
+
+            self.verification_pub.publish(self.tf_pcl_msg)
+            self.verification_pub2.publish(self.np2msg(color_pcl_np))
+
 
     def np2msg(self, points):
         """Convert numpy array of points into ros PointCloud2 msg.
 
         Args:
-            points: numpy (x * 3) array of xyz points or numpy (n * 4) array of
-                xyz points and intensities
+            points: numpy (x * 3) array of xyz points, numpy (n * 4) array of
+                xyz points and intensities. or numpy (n * 7) array of xyz
+                points, intensities, and rgb color
 
         Returns:
             ROS PointCloud2 msg with points and frame_id
         """
+        if points.shape[1] == 3:
+            data = np.zeros(points.shape[0], dtype=[
+              ('x', np.float32),
+              ('y', np.float32),
+              ('z', np.float32),
+            ])
+            data['x'] = points[:, 0]
+            data['y'] = points[:, 1]
+            data['z'] = points[:, 2]
 
-        data = np.zeros(points.shape[0], dtype=[
-          ('x', np.float32),
-          ('y', np.float32),
-          ('z', np.float32),
-        ])
-        data['x'] = points[:, 0]
-        data['y'] = points[:, 1]
-        data['z'] = points[:, 2]
+        elif points.shape[1] == 4:
+            data = np.zeros(points.shape[0], dtype=[
+              ('x', np.float32),
+              ('y', np.float32),
+              ('z', np.float32),
+              ('intensity', np.float32),
+            ])
+            data['x'] = points[:, 0]
+            data['y'] = points[:, 1]
+            data['z'] = points[:, 2]
+            data['intensity'] = points[:, 3]
+
+        elif points.shape[1] == 7:
+            data = np.zeros(points.shape[0], dtype=[
+              ('x', np.float32),
+              ('y', np.float32),
+              ('z', np.float32),
+              ('intensity', np.float32),
+              ('r', np.float32),
+              ('g', np.float32),
+              ('b', np.float32),
+            ])
+            data['x'] = points[:, 0]
+            data['y'] = points[:, 1]
+            data['z'] = points[:, 2]
+            data['intensity'] = points[:, 3]
+            data['r'] = points[:, 4]
+            data['g'] = points[:, 5]
+            data['b'] = points[:, 6]
 
         return ros_numpy.msgify(
             PointCloud2, data, stamp=None, frame_id='base_link')
