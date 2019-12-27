@@ -11,8 +11,6 @@ import tf2_py as tf2
 import random
 
 from modules.helperFunctions import *
-# from models.helperFunctions import *
-# asdffasdfasd
 
 class SimDatasetCreator(object):
     def __init__(self):
@@ -27,8 +25,7 @@ class SimDatasetCreator(object):
         self.tf_pcl_msg = None # Pointcloud message in base_link frame
         self.pcl_np_filtered = None # Pointcloud in numpy form with groundplane removed
         self.clusters = None # List containing clusters in Pointcloud
-        self.pcl_np = None
-        self.tf_pcl_np = None
+        self.pcl_np = None # Raw pointcloud in numpy form 
 
         # For Visualization
         self.verification_pub = rospy.Publisher("tf_points_verificaton",

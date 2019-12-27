@@ -59,6 +59,7 @@ def compute_clusters(pcl, thresh=10, grid_dim=20,
         clusters: list containing clusters in pointcloud
 
     TODO: Optimize this function - find a way to remove for loop
+    TODO: Add bounding boxes to visualization
     """
     # Compute binary occupancy grid
     center = grid_dim/2
@@ -72,7 +73,6 @@ def compute_clusters(pcl, thresh=10, grid_dim=20,
 
     occupancy_grid_binary = occupancy_grid > thresh
     occupancy_grid_binary = occupancy_grid_binary.astype(int)
-    # print(occupancy_grid_binary)
 
     # Compute connected components
     labels, nb = ndimage.label(occupancy_grid_binary)
@@ -94,11 +94,41 @@ def compute_clusters(pcl, thresh=10, grid_dim=20,
     return clusters
 
 def compute_pts_in_cell(pcl, x_min, x_max, y_min, y_max):
+    """ Determine whether each point in pointcloud lies within a grid cell
+
+    Args:
+        pcl: (n * 4) numpy array of xyz points and intensities
+        x_min: number representing the min x position of the grid cell relative
+            to the base_link
+        x_max: number representing the max x position of the grid cell relative
+            to the base_link
+        y_min: number representing the min y position of the grid cell relative
+            to the base_link
+        y_max: number representing the max y position of the grid cell relative
+            to the base_link
+
+    Returns:
+        valid_pts: (n * 1) bool array of whether each point lies in cell
+    """
     valid_pts = (pcl[:,0] > x_min) & (pcl[:,0] < x_max) & \
                 (pcl[:,1] > y_min) & (pcl[:,1] < y_max)
     return valid_pts
 
 def connected_components_to_clusters(pcl, labels, nb, xs, ys, grid_cell_size):
+    """ Create dictionary of clusters based on connected components
+
+    Args:
+        pcl: (n * 4) numpy array of xyz points and intensities
+        labels: (n * 1) numpy array of connected component label for each point
+        nb: (int) number of connected components
+        xs: (list) list of xs for grid cells
+        ys: (list) list of ys for grid cells
+        grid_cell_size: number representing size of cell in meters
+
+    Returns:
+        clusters: (dict) keys are connected component labels, values are points
+            within each cluster
+    """
     clusters = {component: np.array([]) for component in range(0, nb+1)}
 
     for i, x in enumerate(xs):
@@ -110,67 +140,6 @@ def connected_components_to_clusters(pcl, labels, nb, xs, ys, grid_cell_size):
     for label in range(nb+1):
         clusters[label] = clusters[label].reshape(len(clusters[label])/4, 4)
     return clusters
-
-
-
-"""
-Occupancy grid
-grid_dim = [100, 100] # in m
-grid_cell_size = [0.15, 0.15] # in m, make sure evenly divisible
-
-occupancy_grid = np.zeros(grid_dim[0]/grid_cell_size[0], grid_dim[1]/grid_cell_size[1])
-
-for i in range(occupancy_grid.shape[0]):
-    for j in range(occupancy_grid.shape[1]):
-        cell_x_range = []
-        cell_y_range = []
-        # Populate grid with number of points per cell
-
-
-occupancy_grid[i][j] = num_pts(i,j)
-occupancy_grid[lambda x,y num_pts(i,j)]
-
-def num_pts(i,j)
-
-
-occupancy_grid_binary = occupancy_grid[occupancy_grid > threshold]
-
-Conencted components
-n_components, labels = connected_components(csgraph=graph, directed=False, return_labels=True)
-
-clusters = []
-
-for each connected component
-    cluster_pts = []
-    for each cell in connected component
-        get points in cell
-        cluster_pts.append(additional_points)
-    clusters.append(cluster_pts)
-"""
-
-
-    # # Cluster points in 2D - uses hierarchical clustering (https://stackoverflow.com/questions/10136470/unsupervised-clustering-with-unknown-number-of-clusters)
-    # clusters = hcluster.fclusterdata(pcl[:,:2], thresh, criterion="distance")
-    # num_clusters = len(np.unique(clusters))
-    #
-    # # TODO: Include filter for throwing out clusters that are too small
-    # plt.clf()
-    # plt.scatter(*np.transpose(pcl[:,:2]), c=clusters)
-    # plt.axis("equal")
-    # plt.draw()
-    # plt.pause(0.00000000001)
-    #
-    # return clusters
-
-def compute_bounding_box(cluster):
-    """
-    compute eigenvalues of cluster
-    rotate points
-    box is max/min
-    rotate box back
-
-    bounding box data structure
-    """
 
 def extract_cluster_parameters(cluster, display=False):
     """Calculate features for net training from pcl
