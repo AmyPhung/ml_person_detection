@@ -80,7 +80,7 @@ def compute_clusters(pcl, thresh=10, grid_dim=20,
     # Visualize connected components
     plt.clf()
     plt.imshow(labels)
-    plt.title('label')
+    plt.title('Connected Components')
     plt.axis('off')
 
     plt.subplots_adjust(wspace=.05, left=.01, bottom=.01, right=.99, top=.9)
@@ -91,6 +91,8 @@ def compute_clusters(pcl, thresh=10, grid_dim=20,
     clusters = connected_components_to_clusters(pcl, labels, nb, xs, ys,
                                                 grid_cell_size)
 
+    # Delete cluster 0 since it contains points not part of a cluster
+    del clusters[0]
     return clusters
 
 def compute_pts_in_cell(pcl, x_min, x_max, y_min, y_max):
