@@ -25,7 +25,7 @@ class SimDatasetCreator(object):
         self.tf_pcl_msg = None # Pointcloud message in base_link frame
         self.pcl_np_filtered = None # Pointcloud in numpy form with groundplane removed
         self.clusters = None # List containing clusters in Pointcloud
-        self.pcl_np = None # Raw pointcloud in numpy form 
+        self.pcl_np = None # Raw pointcloud in numpy form
 
         # For Visualization
         self.verification_pub = rospy.Publisher("tf_points_verificaton",
@@ -90,9 +90,7 @@ class SimDatasetCreator(object):
             color_pcl_np_y = np.array([])
             color_pcl_np_z = np.array([])
             color_pcl_np_intensity = np.array([])
-            color_pcl_np_r = np.array([])
-            color_pcl_np_g = np.array([])
-            color_pcl_np_b = np.array([])
+            color_pcl_np_color = np.array([])
 
             for label in self.clusters:
                 cluster = self.clusters[label]
@@ -102,17 +100,13 @@ class SimDatasetCreator(object):
                 color_pcl_np_y = np.append(color_pcl_np_y, cluster[:,1])
                 color_pcl_np_z = np.append(color_pcl_np_z, cluster[:,2])
                 color_pcl_np_intensity = np.append(color_pcl_np_intensity, cluster[:,3])
-                color_pcl_np_r = np.append(color_pcl_np_r, rand_color_arr)
-                color_pcl_np_g = np.append(color_pcl_np_g, rand_color_arr)
-                color_pcl_np_b = np.append(color_pcl_np_b, rand_color_arr)
+                color_pcl_np_color = np.append(color_pcl_np_color, rand_color_arr)
 
             color_pcl_np = np.array([color_pcl_np_x,
                                      color_pcl_np_y,
                                      color_pcl_np_z,
                                      color_pcl_np_intensity,
-                                     color_pcl_np_r,
-                                     color_pcl_np_g,
-                                     color_pcl_np_b]).transpose()
+                                     color_pcl_np_color]).transpose()
 
             self.verification_pub.publish(self.tf_pcl_msg)
             self.verification_pub2.publish(self.np2msg(color_pcl_np))
@@ -123,8 +117,8 @@ class SimDatasetCreator(object):
 
         Args:
             points: numpy (x * 3) array of xyz points, numpy (n * 4) array of
-                xyz points and intensities. or numpy (n * 7) array of xyz
-                points, intensities, and rgb color
+                xyz points and intensities. or numpy (n * 5) array of xyz
+                points, intensities, and color
 
         Returns:
             ROS PointCloud2 msg with points and frame_id
@@ -151,23 +145,19 @@ class SimDatasetCreator(object):
             data['z'] = points[:, 2]
             data['intensity'] = points[:, 3]
 
-        elif points.shape[1] == 7:
+        elif points.shape[1] == 5:
             data = np.zeros(points.shape[0], dtype=[
               ('x', np.float32),
               ('y', np.float32),
               ('z', np.float32),
               ('intensity', np.float32),
-              ('r', np.float32),
-              ('g', np.float32),
-              ('b', np.float32),
+              ('color', np.float32)
             ])
             data['x'] = points[:, 0]
             data['y'] = points[:, 1]
             data['z'] = points[:, 2]
             data['intensity'] = points[:, 3]
-            data['r'] = points[:, 4]
-            data['g'] = points[:, 5]
-            data['b'] = points[:, 6]
+            data['color'] = points[:, 4]
 
         return ros_numpy.msgify(
             PointCloud2, data, stamp=None, frame_id='base_link')
