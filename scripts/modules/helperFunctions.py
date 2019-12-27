@@ -84,6 +84,7 @@ def compute_clusters(pcl, thresh=10, grid_dim=20,
     plt.axis('off')
 
     plt.subplots_adjust(wspace=.05, left=.01, bottom=.01, right=.99, top=.9)
+    plt.gca().invert_yaxis() # Need to flip y-axis since rviz is backwards
     plt.draw()
     plt.pause(0.00000000001)
 
