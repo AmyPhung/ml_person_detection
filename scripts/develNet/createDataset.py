@@ -22,6 +22,7 @@ import logging
 import os.path
 import pdb
 import sys
+import re
 
 import rospy as rp
 import numpy as np
@@ -116,7 +117,7 @@ class DatasetCreator(object):
 
         # Get thresholded cluster from each given bbox
         for i, bbox in enumerate(bboxes):
-            cluster = get_pts_in_bbox(pcl, bbox, self.logger)
+            cluster = get_pts_in_bbox(pcl, bbox)
             self.logger.debug(
                 "bbox=%i * %i, class=%i, id=%s, pt_count=%i"
                 % (i, len(bboxes), bbox.type, bbox.id, len(cluster)))
@@ -133,12 +134,13 @@ class DatasetCreator(object):
         self.logger.debug('Exit:clusterByBBox')
         return valid_clusters, valid_bboxes
 
-    def computeClusterMetadata(self, cluster, bbox, frame_id):
+    def computeClusterMetadata(self, cluster, bbox, tfrecord_id, frame_id):
         """Compute key information from cluster to boil down pointcloud info.
 
         Args:
             cluster: list of xyz points and intensities within cluster
             bbox: waymo object label output
+            tfrecord_id: numeric id of tfrecord file
             frame_id: int of frame index into tfrecord
 
         Returns:
@@ -156,6 +158,7 @@ class DatasetCreator(object):
         features = Features()
         features.cluster_id = bbox.id
         features.frame_id = frame_id
+        features.tfrecord_id = tfrecord_id
         features.cls = bbox.type
         features.cnt = cluster.shape[0]
         features.parameters = extract_cluster_parameters(
@@ -223,7 +226,7 @@ class DatasetCreator(object):
 
         self.logger.debug('Exit:saveClusterMetadata')
 
-    def parseFrame(self, frame, frame_id):
+    def parseFrame(self, frame, tfrecord_id, frame_id):
         """Extract and save data from a single given frame.
 
         Main function for filtering, clustering, and extracting features from
@@ -238,6 +241,7 @@ class DatasetCreator(object):
 
         Args:
             frame: waymo open dataset Frame with loaded data
+            tfrecord_id: numeric id of tfrecord file
             frame_id: index of waymo Frame in tfrecord
 
         """
@@ -246,7 +250,8 @@ class DatasetCreator(object):
         pcl = self.filterPcl(pcl)  # 2
 
         clusters, bboxes = self.clusterByBBox(pcl, bboxes)  # 3
-        metadata = [self.computeClusterMetadata(clusters[b.id], b, frame_id)
+        metadata = [self.computeClusterMetadata(
+                        clusters[b.id], b, tfrecord_id, frame_id)
                     for b in bboxes]  # 4
 
         metadata, clusters = self.filterMetadata(metadata, clusters)  # 5
@@ -270,11 +275,12 @@ class DatasetCreator(object):
         self.logger.debug('Exit:checkDataFile')
         return os.path.isfile(file)
 
-    def run(self, data_file, file_number='', overwrite=False):
+    def run(self, data_file, tfrecord_id, file_number='', overwrite=False):
         """Generate data for all scans in all .tfrecord files in dir.
 
         Args:
             data_file: str .tfrecord file to parse
+            tfrecord_id: (str) unique numeric id
             file_number: optional str to print
             overwrite: Bool for overwriting already existing data
 
@@ -283,6 +289,11 @@ class DatasetCreator(object):
 
         """
         self.logger.debug('Entr:run')
+
+        # Parse tfrecord filename with regex to get id
+        tfrecord_id = re.search(
+            'segment-([0-9]+_[0-9]+_[0-9]+_[0-9]+_[0-9]+)_with_camera_labels',
+            data_file).group(1)
         tfrecord = tf.data.TFRecordDataset(data_file, compression_type='')
         record_len = sum(1 for _ in tf.python_io.tf_record_iterator(data_file))
         self.logger.debug('Found %s frames in tfrecord' % record_len)
@@ -310,7 +321,7 @@ class DatasetCreator(object):
                 self.logger.info(
                     'frame #: %i, tfrecord id: %s'
                     % (i, str(frame.context.name)))
-                self.parseFrame(frame, i)
+                self.parseFrame(frame, i, tfrecord_id)
 
         self.logger.info(
             'STATUS UPDATE: tfrecord parse is 100% percent complete.')
