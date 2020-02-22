@@ -7,113 +7,21 @@ contains classes for conversion, both to Ros (PointCloud2 & MarkerArray)
 and numpy (ndarray & list)
 """
 
-import itertools
-import math
-import os
-import random
 import ros_numpy
 
 import tensorflow as tf
 import numpy as np
 import rospy as rp
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-
 from waymo_open_dataset import dataset_pb2 as open_dataset
-from waymo_open_dataset.utils import \
-    range_image_utils, transform_utils, frame_utils
 
+from waymo2numpy import Waymo2Numpy
 from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import Marker, MarkerArray
 from tf.transformations import quaternion_from_euler
 
 tf.enable_eager_execution()
 
-
-class Waymo2Numpy(object):
-    """Converter class for translating Waymo frame data to numpy arrays."""
-
-    def __init__(self):
-        """Initialize state vars."""
-        self.label_ids = {}  # stores label - int correspondence
-
-    def get_label_id(self, label):
-        """Return numeric id of label from label_ids.
-
-        Checks for label in hash map. If exists, returns int.
-        Otherwise, adds label and returns newly populated consecutive id.
-        """
-        if label not in self.label_ids:
-            self.label_ids[label] = len(self.label_ids)
-        return self.label_ids[label]
-
-    def get_label_color(self, label):
-        """Return seeded random color for label."""
-        random.seed(self.get_label_id(label))
-        return [random.uniform(0, 1) for i in range(3)]
-
-    def create_frame(self, scan):
-        """Creates frame from scan in tfrecord.
-
-        Example:
-            tfrecord = tf.data.TFRecordDataset(<.tfrecord>, compression_type='')
-            for scan in tfrecord:
-                frame = create_frame(scan)
-        """
-        frame = open_dataset.Frame()
-        frame.ParseFromString(bytearray(scan.numpy()))
-        return frame
-
-    def unpack_frame(self, frame):
-        """Get pcl, intensities, and labels from frame."""
-        return self.frame2pcl(frame), self.frame2labels(frame)
-
-    def frame2labels(self, frame):
-        """Extract laser labels from waymo data frame."""
-        return frame.laser_labels
-
-    def frame2points(self, frame):
-        """Extract points from waymo frame.
-
-        Args:
-            frame: waymo data frame
-
-        Returns:
-            points: numpy (n * 3) array of xyz points
-        """
-        frame.lasers.sort(key=lambda laser: laser.name)
-
-        (range_images, camera_projections, range_image_top_pose) = \
-            frame_utils.parse_range_image_and_camera_projection(frame)
-
-        pcl = convert_range_image_to_pcl(
-            frame,
-            range_images,
-            camera_projections,
-            range_image_top_pose)
-        return pcl[:,:3] # Only return first three columns for xyz data
-
-    def frame2pcl(self, frame):
-        """Extract points and intensities from waymo frame.
-
-        Args:
-            frame: waymo data frame
-
-        Returns:
-            pcl: numpy (n * 4) array of xyz points and intensities
-        """
-        frame.lasers.sort(key=lambda laser: laser.name)
-
-        (range_images, camera_projections, range_image_top_pose) = \
-            frame_utils.parse_range_image_and_camera_projection(frame)
-
-        pcl = convert_range_image_to_pcl(
-            frame,
-            range_images,
-            camera_projections,
-            range_image_top_pose)
-        return pcl
 
 class Waymo2Ros(Waymo2Numpy):
     """Converter class for translating Waymo frame data to Ros msgs."""
@@ -216,93 +124,95 @@ class Waymo2RosViz(Waymo2Ros):
         self.box_pub.publish(bbox_msg)
 
 
+class DatasetCreatorVis(DatasetCreator):
+    """Class for visualizing DatasetCreator tasks with rviz."""
 
-def convert_range_image_to_pcl(frame,
-                               range_images,
-                               camera_projections,
-                               range_image_top_pose,
-                               ri_index=0):
+    def __init__(
+            self, dir_load, dir_save, logger=None, dir_log=None,
+            save_data=True, verbosity=None, visualize=0, density_thresh=0):
+        """Initialize Ros components, DatasetCreator, visualize setting."""
+        self.density_thresh = density_thresh
+        self.visualize = visualize
+        self.ros_converter = Waymo2Ros()
+        rp.init_node('dataset_creator_vis', disable_signals=True)
+        self.marker_pub = rp.Publisher('/bboxes', MarkerArray, queue_size=1)
+        self.pcl_pub = rp.Publisher('/pcl', PointCloud2, queue_size=1)
+        DatasetCreator.__init__(
+            self, dir_load=dir_load, dir_save=dir_save, logger=logger,
+            dir_log=dir_log, save_data=save_data, verbosity=verbosity,
+            density_thresh=density_thresh)
+        self.logger.debug('Exit:__init__')
 
-    """Convert range images to point cloud with point intensity info
-    Based on frame_utils.convert_range_image_to_point_cloud
+    def pubData(self, pcl=None, bboxes=None):
+        """Publish pointcloud and bounding boxes for rviz visualization."""
+        self.pcl_pub.publish(self.ros_converter.convert2pcl(pcl))
+        self.marker_pub.publish(self.ros_converter.convert2markerarray(bboxes))
 
-    Args:
-        frame: open dataset frame
-        range_images: A dict of {laser_name, [range_image_first_return,
-                                 range_image_second_return]}.
-        camera_projections: A dict of {laser_name,
-                                       [camera_projection_from_first_return,
-                                       camera_projection_from_second_return]}.
-       range_image_top_pose: range image pixel pose for top lidar.
-       ri_index: 0 for the first return, 1 for the second return.
+    def parseFrame(self, frame, frame_id):
+        """Extract and save data from a single given frame, viz if specified.
 
-    Returns:
-       pcl: numpy (n * 4) array of xyz points and intensities
-    """
-    calibrations = sorted(frame.context.laser_calibrations, key=lambda c: c.name)
-    points = []
-    intensities = []
+        Note:
+            self.visualize attribute settings:
+                1: shows original data.
+                2: shows ground filtered data.
+                3: shows clustered data.
+                4: shows density filtered data.
 
-    frame_pose = tf.convert_to_tensor(
-        value=np.reshape(np.array(frame.pose.transform), [4, 4]))
-    # [H, W, 6]
-    range_image_top_pose_tensor = tf.reshape(
-        tf.convert_to_tensor(value=range_image_top_pose.data),
-        range_image_top_pose.shape.dims)
-    # [H, W, 3, 3]
-    range_image_top_pose_tensor_rotation = transform_utils.get_rotation_matrix(
-        range_image_top_pose_tensor[..., 0], range_image_top_pose_tensor[..., 1],
-        range_image_top_pose_tensor[..., 2])
-    range_image_top_pose_tensor_translation = range_image_top_pose_tensor[..., 3:]
-    range_image_top_pose_tensor = transform_utils.get_transform(
-        range_image_top_pose_tensor_rotation,
-        range_image_top_pose_tensor_translation)
-    for c in calibrations:
-        range_image = range_images[c.name][ri_index]
-        if len(c.beam_inclinations) == 0:  # pylint: disable=g-explicit-length-test
-            beam_inclinations = range_image_utils.compute_inclination(
-                tf.constant([c.beam_inclination_min, c.beam_inclination_max]),
-                height=range_image.shape.dims[0])
-        else:
-            beam_inclinations = tf.constant(c.beam_inclinations)
+        Args:
+            frame: waymo open dataset Frame with loaded data
+            frame_id: index of waymo Frame in tfrecord
 
-        beam_inclinations = tf.reverse(beam_inclinations, axis=[-1])
-        extrinsic = np.reshape(np.array(c.extrinsic.transform), [4, 4])
+        """
+        self.logger.debug('Entr:parseFrame')
+        self.visualize = int(
+            rp.get_param("/visualize", self.visualize))
+        self.density_thresh = int(
+            rp.get_param("/density_thresh", self.density_thresh))
 
-        range_image_tensor = tf.reshape(
-            tf.convert_to_tensor(value=range_image.data), range_image.shape.dims)
-        pixel_pose_local = None
-        frame_pose_local = None
+        pcl, bboxes = self.waymo_converter.unpack_frame(frame)  # 1
 
-        if c.name == open_dataset.LaserName.TOP:
-            pixel_pose_local = range_image_top_pose_tensor
-            pixel_pose_local = tf.expand_dims(pixel_pose_local, axis=0)
-            frame_pose_local = tf.expand_dims(frame_pose, axis=0)
-        range_image_mask = range_image_tensor[..., 0] > 0
-        range_image_cartesian = range_image_utils.extract_point_cloud_from_range_image(
-            tf.expand_dims(range_image_tensor[..., 0], axis=0),
-            tf.expand_dims(extrinsic, axis=0),
-            tf.expand_dims(tf.convert_to_tensor(value=beam_inclinations), axis=0),
-                pixel_pose=pixel_pose_local,
-                frame_pose=frame_pose_local)
-        range_image_intensity = range_image_tensor[...,1]
+        if self.visualize == 1:
+            self.pubData(pcl, bboxes)
 
-        range_image_cartesian = tf.squeeze(range_image_cartesian, axis=0)
+        pcl = self.filterPcl(pcl)  # 2
 
-        points_tensor = tf.gather_nd(range_image_cartesian,
-                                 tf.compat.v1.where(range_image_mask))
-        intensity_tensor = tf.gather_nd(range_image_intensity,
-                                 tf.compat.v1.where(range_image_mask))
+        if self.visualize == 2:
+            self.pubData(pcl, bboxes)
 
-        points.append(points_tensor.numpy())
-        intensities.append(intensity_tensor.numpy())
+        clusters, bboxes = self.clusterByBBox(pcl, bboxes)  # 3
 
-    points = np.concatenate(points, axis=0)
-    intensities = np.concatenate(intensities, axis=0)
+        if self.visualize == 3:
+            if len(clusters) > 0:
+                self.pubData(np.concatenate(clusters.values()), bboxes)
+            else:
+                self.logger.warning("No pcl with count > 10 pts")
 
-    # Adding intensities to numpy array
-    pcl = np.hstack((points, np.atleast_2d(intensities).T))
-    return pcl
+        metadata = [self.computeClusterMetadata(
+                    clusters[bbox.id], bbox, frame_id)
+                    for bbox in bboxes]  # 4
+
+        metadata, clusters = self.filterMetadata(
+            metadata, clusters, self.density_thresh)  # 5
+
+        # Show density filtered data if any clusters found
+        if self.visualize == 4:
+            if len(clusters) > 0:
+                # Decided to plot full pointcloud since it makes it easier to
+                # tell that nothing important is being removed. To only plot
+                # points that are a part of the new sub-selected clusters,
+                # uncomment this code
+                # self.pcl_pub.publish(self.ros_converter.convert2pcl(
+                #     np.concatenate(sub_clusters.values())))
+
+                self.pubData(
+                    pcl, [b for b in bboxes if str(b.id) in clusters.keys()])
+            else:
+                self.logger.warning("No pcl with density > 100 pts/m^3")
+
+        if self.save_data:
+            self.saveClusterMetadata(metadata, frame.context.name)  # 6
+        self.logger.debug('Exit:parseFrame')
+        return
 
 
 if __name__ == "__main__":

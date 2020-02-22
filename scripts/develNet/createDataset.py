@@ -21,18 +21,14 @@ import json
 import logging
 import os.path
 import pdb
-import sys
 import re
+import sys
 
-import rospy as rp
 import numpy as np
 import tensorflow as tf
 
-from sensor_msgs.msg import PointCloud2
-from visualization_msgs.msg import MarkerArray
-
 from modules.helperFunctions import *
-from modules.waymo2ros import Waymo2Numpy, Waymo2Ros
+from modules.waymo2numpy import Waymo2Numpy
 
 
 class DatasetCreator(object):
@@ -326,97 +322,6 @@ class DatasetCreator(object):
         self.logger.info(
             'STATUS UPDATE: tfrecord parse is 100% percent complete.')
         self.logger.debug('Exit:run')
-        return
-
-
-class DatasetCreatorVis(DatasetCreator):
-    """Class for visualizing DatasetCreator tasks with rviz."""
-
-    def __init__(
-            self, dir_load, dir_save, logger=None, dir_log=None,
-            save_data=True, verbosity=None, visualize=0, density_thresh=0):
-        """Initialize Ros components, DatasetCreator, visualize setting."""
-        self.density_thresh = density_thresh
-        self.visualize = visualize
-        self.ros_converter = Waymo2Ros()
-        rp.init_node('dataset_creator_vis', disable_signals=True)
-        self.marker_pub = rp.Publisher('/bboxes', MarkerArray, queue_size=1)
-        self.pcl_pub = rp.Publisher('/pcl', PointCloud2, queue_size=1)
-        DatasetCreator.__init__(
-            self, dir_load=dir_load, dir_save=dir_save, logger=logger,
-            dir_log=dir_log, save_data=save_data, verbosity=verbosity,
-            density_thresh=density_thresh)
-        self.logger.debug('Exit:__init__')
-
-    def pubData(self, pcl=None, bboxes=None):
-        """Publish pointcloud and bounding boxes for rviz visualization."""
-        self.pcl_pub.publish(self.ros_converter.convert2pcl(pcl))
-        self.marker_pub.publish(self.ros_converter.convert2markerarray(bboxes))
-
-    def parseFrame(self, frame, frame_id):
-        """Extract and save data from a single given frame, viz if specified.
-
-        Note:
-            self.visualize attribute settings:
-                1: shows original data.
-                2: shows ground filtered data.
-                3: shows clustered data.
-                4: shows density filtered data.
-
-        Args:
-            frame: waymo open dataset Frame with loaded data
-            frame_id: index of waymo Frame in tfrecord
-
-        """
-        self.logger.debug('Entr:parseFrame')
-        self.visualize = int(
-            rp.get_param("/visualize", self.visualize))
-        self.density_thresh = int(
-            rp.get_param("/density_thresh", self.density_thresh))
-
-        pcl, bboxes = self.waymo_converter.unpack_frame(frame)  # 1
-
-        if self.visualize == 1:
-            self.pubData(pcl, bboxes)
-
-        pcl = self.filterPcl(pcl)  # 2
-
-        if self.visualize == 2:
-            self.pubData(pcl, bboxes)
-
-        clusters, bboxes = self.clusterByBBox(pcl, bboxes)  # 3
-
-        if self.visualize == 3:
-            if len(clusters) > 0:
-                self.pubData(np.concatenate(clusters.values()), bboxes)
-            else:
-                self.logger.warning("No pcl with count > 10 pts")
-
-        metadata = [self.computeClusterMetadata(
-                    clusters[bbox.id], bbox, frame_id)
-                    for bbox in bboxes]  # 4
-
-        metadata, clusters = self.filterMetadata(
-            metadata, clusters, self.density_thresh)  # 5
-
-        # Show density filtered data if any clusters found
-        if self.visualize == 4:
-            if len(clusters) > 0:
-                # Decided to plot full pointcloud since it makes it easier to
-                # tell that nothing important is being removed. To only plot
-                # points that are a part of the new sub-selected clusters,
-                # uncomment this code
-                # self.pcl_pub.publish(self.ros_converter.convert2pcl(
-                #     np.concatenate(sub_clusters.values())))
-
-                self.pubData(
-                    pcl, [b for b in bboxes if str(b.id) in clusters.keys()])
-            else:
-                self.logger.warning("No pcl with density > 100 pts/m^3")
-
-        if self.save_data:
-            self.saveClusterMetadata(metadata, frame.context.name)  # 6
-        self.logger.debug('Exit:parseFrame')
         return
 
 
