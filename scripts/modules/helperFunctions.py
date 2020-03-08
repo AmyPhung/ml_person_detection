@@ -208,6 +208,8 @@ class Features(object):
     """Class to store features of a cluster
 
     Attributes:
+        tfrecord_id: (str) numeric string identifying tfrecord file
+        frame_id: (int) index of frame into tfrecord
         cluster_id: unique unicode ID for cluster
         cls: class ID of feature
         cnt: number of points
@@ -224,14 +226,15 @@ class Features(object):
             max_intensity = maximum intensity in cluster
             mean_intensity = average intensity in cluster
             var_intensity = variance of intensity in cluster
-    """
-    def __init__(self, cluster_id=None, tfrecord_id=None, frame_id=None,
-				 cls=None, cnt=None, x=0, y=0, z=0, e_x=0, e_y=0, e_z=0,
-				 vol=0, density=0, max_intensity=0, mean_intensity=0,
-				 var_intensity=0):
 
-        self.cluster_id = cluster_id
+    """
+    def __init__(self, tfrecord_id=None, cluster_id=None, frame_id=None,
+                 cls=None, cnt=None, x=0, y=0, z=0, e_x=0, e_y=0, e_z=0,
+                 vol=0, density=0, max_intensity=0, mean_intensity=0,
+                 var_intensity=0):
+
         self.tfrecord_id = tfrecord_id
+        self.cluster_id = cluster_id
         self.frame_id = frame_id
         self.cls = cls
         self.cnt = cnt
@@ -244,9 +247,9 @@ class Features(object):
                            max_intensity, mean_intensity, var_intensity]
 
     def __str__(self):
-        return "Cluster ID: "                + str(self.cluster_id)    + "\n" \
+        return "TfRecord ID: "               + str(self.tfrecord_id)   + "\n" \
                "Frame ID: "                  + str(self.frame_id)      + "\n" \
-               "TfRecord ID: "               + str(self.tfrecord_id)   + "\n" \
+               "Cluster ID: "                + str(self.cluster_id)    + "\n" \
                "Point Count: "               + str(self.cnt)           + "\n" \
                "Class: "                     + str(self.cls)           + "\n" \
                "Parameters:"                                           + "\n" \
@@ -264,9 +267,9 @@ class Features(object):
 
     def as_dict(self):
         return {
-            'cluster_id' : self.cluster_id,
-			'tfrecord_id' : self.tfrecord_id,
+            'tfrecord_id' : self.tfrecord_id,
             'frame_id' : self.frame_id,
+            'cluster_id' : self.cluster_id,
             'cls' : self.cls,
             'cnt' : self.cnt,
             'parameters' : self.parameters

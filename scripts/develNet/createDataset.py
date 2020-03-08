@@ -321,7 +321,7 @@ class DatasetCreator(object):
                 self.logger.info(
                     'frame #: %i, tfrecord id: %s'
                     % (i, str(frame.context.name)))
-                self.parseFrame(frame, i, tfrecord_id)
+                self.parseFrame(frame, tfrecord_id, frame_id=i)
 
         self.logger.info(
             'STATUS UPDATE: tfrecord parse is 100% percent complete.')
@@ -393,7 +393,7 @@ class DatasetCreatorVis(DatasetCreator):
                 self.logger.warning("No pcl with count > 10 pts")
 
         metadata = [self.computeClusterMetadata(
-                    clusters[bbox.id], bbox, frame_id)
+                    clusters[bbox.id], bbox, tfrecord_id, frame_id)
                     for bbox in bboxes]  # 4
 
         metadata, clusters = self.filterMetadata(
