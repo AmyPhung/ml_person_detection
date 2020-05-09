@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Module for shared code between waymo pipeline and panasonic pipeline.
 
 This module holds functions that are used in both pipelines:

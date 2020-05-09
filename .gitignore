@@ -4,3 +4,7 @@
 /data/*
 /logs/*.log
 config/*
+
+# Python virtual environments
+env/
+venv/

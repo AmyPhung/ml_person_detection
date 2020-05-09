@@ -1,19 +1,27 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
+# TODO update above 
 """Function to concatenate multiple json data files into csv.
 
     Usage:
-        1. navigate to .../ml_person_detection/scripts
+        1. navigate to .../m_person_detection/scripts
         2. `python2 -m modules.json2csv <json dir in ml_person_detection/data>
 """
 
-import csv
-import glob
-import json
-import os
-import re
-import sys
+try:
+    import csv
+    import glob
+    import json
+    import os
+    import re
+    import sys
 
-from modules.helperFunctions import Features
+    from modules.helperFunctions import Features
+
+# Remind user to check their python virtual environment if import fails
+except ImportError:
+    print("REMINDER: Did you activate your python3 virtual environment?")
+    raise
+
 
 def json2csv(json_dir, csv_dir, csv_name):
     """Add .json files from 1+ tfrecords into one .csv.
