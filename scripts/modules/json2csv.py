@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# TODO update above 
 """Function to concatenate multiple json data files into csv.
+
+    Todo:
+        Convert to argparse and pathlib
 
     Usage:
         1. navigate to .../m_person_detection/scripts

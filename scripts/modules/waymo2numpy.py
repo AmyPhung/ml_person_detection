@@ -8,7 +8,7 @@ and numpy (ndarray & list)
 
 import random  # Used for random label colors
 
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import numpy as np
 
 """Used to create custom convert_range_image_to_pcl function
@@ -16,11 +16,6 @@ import numpy as np
     Used instead of waymo_open_dataset corresponding function
 """
 from waymo_open_dataset import dataset_pb2 as open_dataset
-
-"""Found error on range_image_utils import:
-    https://github.com/waymo-research/waymo-open-dataset/issues/155
-    Fixed locally (2020-05-08) until further action on issue
-"""
 from waymo_open_dataset.utils import \
     range_image_utils, transform_utils, frame_utils
 

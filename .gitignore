@@ -5,6 +5,5 @@
 /logs/*.log
 config/*
 
-# Python virtual environments
+# Python virtual environment
 env/
-venv/
