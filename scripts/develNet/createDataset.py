@@ -15,21 +15,18 @@ Examples:
         roslaunch ml_person_detection createDataset.launch
 
 """
-
-# Standard library imports
 import datetime
+import glob
 import json
 import logging
+import os.path
 import pdb
 import re
 import sys
-from pathlib import Path
 
-# External library imports
 import numpy as np
 import tensorflow.compat.v1 as tf
 
-# Local imports
 from modules.helperFunctions import *
 from modules.waymo2numpy import Waymo2Numpy
 
@@ -268,11 +265,11 @@ class DatasetCreator(object):
                 create filename for which to check
 
         """
-        self.logger.debug("Entr:checkDataFile")
-        file = self.dir_save / f"{frame.context.name}.json"
-        self.logger.debug(f"Show:frame_file={file}")
-        self.logger.debug("Exit:checkDataFile")
-        return file.is_file()
+        self.logger.debug('Entr:checkDataFile')
+        file = '%s/%s.json' % (self.dir_save, frame.context.name)
+        self.logger.debug('Show:frame_file=%s' % file)
+        self.logger.debug('Exit:checkDataFile')
+        return os.path.isfile(file)
 
     def run(self, data_file, tfrecord_id, file_number='', overwrite=False):
         """Generate data for all scans in all .tfrecord files in dir.
@@ -332,26 +329,23 @@ if __name__ == "__main__":
     """Load settings from config file, enable rviz if necessary, etc."""
 
     # Load and unpack config parameters
-    p = "/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection/"\
-        "config/lapbot_config.json"
-
-    config_file = Path(p)
-    with config_file.open('r') as io_obj:
-        config_params = json.load(io_obj)
+    config_file = "/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection/"\
+                + "config/lapbot_config.json"
+    with open(config_file, 'r') as file_in:
+        config_params = json.load(file_in)
 
     enable_rviz = bool(config_params['enable_rviz'])
     enable_logging = bool(config_params['enable_logging'])
     save_data = bool(config_params['enable_datasave'])
+    pkg_loc = config_params['pkg_loc']
     dataset = config_params['dataset']
     verbosity = int(config_params['verbosity'])
-
-    pkg_loc = Path(config_params['pkg_loc'])
-    dir_load = Path(config_params['data_loc']) / dataset
+    dir_load = "%s/%s" % (config_params['data_loc'], dataset)
 
     # Initialize other parameters
     visualize = 2
-    dir_log = pkg_loc / "logs"
-    dir_save = pkg_loc / "data" / dataset
+    dir_log = "%s/logs" % pkg_loc
+    dir_save = "%s/data/%s" % (pkg_loc, dataset)
 
     if enable_rviz:
         visualize = int(rp.get_param("/visualize", visualize))
@@ -364,10 +358,10 @@ if __name__ == "__main__":
             dir_load=dir_load, dir_save=dir_save, dir_log=dir_log,
             save_data=save_data, verbosity=verbosity)
 
-    creator.logger.info(f"enable_rviz = {enable_rviz}")
+    creator.logger.info("enable_rviz = %s" % enable_rviz)
 
     # Get list of tfrecords in dataset
-    file_list = dir_load.glob("*.record")
+    file_list = glob.glob('%s/*.tfrecord' % dir_load)
     tfrecord_len = sum(1 for _ in file_list)
     creator.logger.info(
         'Found %i tfrecord files in dataset %s' % (tfrecord_len, dataset))

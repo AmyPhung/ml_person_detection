@@ -9,7 +9,7 @@ and numpy (ndarray & list)
 
 import ros_numpy
 
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 import numpy as np
 import rospy as rp
 
@@ -213,3 +213,18 @@ class DatasetCreatorVis(DatasetCreator):
             self.saveClusterMetadata(metadata, frame.context.name)  # 6
         self.logger.debug('Exit:parseFrame')
         return
+
+
+if __name__ == "__main__":
+
+    converter = Waymo2RosViz()
+
+    # TODO: Make this more general
+    DIRECTORY = '/home/cnovak/Data/waymo-od/training_0000'
+    FILE = 'segment-15578655130939579324_620_000_640_000' \
+        + '_with_camera_labels.tfrecord'
+    dataset = tf.data.TFRecordDataset(DIRECTORY+'/'+FILE, compression_type='')
+    for data in dataset:
+        frame = open_dataset.Frame()
+        frame.ParseFromString(bytearray(data.numpy()))
+        converter.update(frame)
