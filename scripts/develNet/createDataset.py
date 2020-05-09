@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 """Module containing classes for creating and visualizing datasets.
 
 Parses datasets from waymo-od and turns them into directories of json files,
@@ -25,7 +25,7 @@ import re
 import sys
 
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 from modules.helperFunctions import *
 from modules.waymo2numpy import Waymo2Numpy
