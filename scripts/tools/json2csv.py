@@ -18,7 +18,7 @@ import re  # Regex used to get frame index from .json filename
 
 # Local imports
 try:
-    import modules.helperFunctions as hf
+    from ..modules import helperFunctions as hf
     from argparseActions import VerifyPathDirAction, CheckPathFileExistsAction
 # Remind user to check their python virtual environment if import fails
 except (ImportError, ModuleNotFoundError):

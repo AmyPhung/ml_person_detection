@@ -15,6 +15,7 @@ Examples:
         roslaunch ml_person_detection createDataset.launch
 
 """
+import argparse
 import datetime
 import glob
 import json
@@ -327,6 +328,10 @@ class DatasetCreator(object):
 
 if __name__ == "__main__":
     """Load settings from config file, enable rviz if necessary, etc."""
+
+    desc = "Converter from dataset.tar file to folder of .json clusters."
+
+    cli = argparse.ArgumentParser(description=desc)
 
     # Load and unpack config parameters
     config_file = "/home/cnovak/Workspaces/catkin_ws/src/ml_person_detection/"\
